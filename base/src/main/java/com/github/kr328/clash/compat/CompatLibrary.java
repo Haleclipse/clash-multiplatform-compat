@@ -11,10 +11,9 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.util.Comparator;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-final public class CompatLibrary {
+public final class CompatLibrary {
     @Nullable
     private static Path overrideExtractPath = null;
 
@@ -64,10 +63,10 @@ final public class CompatLibrary {
 
                     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                         try (final Stream<Path> files = Files.walk(extractPath)) {
-                            for (final Path file : files.sorted(Comparator.reverseOrder()).collect(Collectors.toList())) {
+                            for (final Path file : files.sorted(Comparator.reverseOrder()).toList()) {
                                 Files.delete(file);
                             }
-                        } catch (IOException e) {
+                        } catch (final IOException e) {
                             // ignored
                         }
                     }));
@@ -82,14 +81,14 @@ final public class CompatLibrary {
                     FileTime libraryFsTime;
                     try {
                         libraryFsTime = Files.getLastModifiedTime(libraryPath);
-                    } catch (Exception e) {
+                    } catch (final Exception e) {
                         libraryFsTime = FileTime.fromMillis(0);
                     }
 
                     FileTime jarFsTime;
                     try {
                         jarFsTime = Files.getLastModifiedTime(Path.of(CompatLibrary.class.getProtectionDomain().getCodeSource().getLocation().getPath()));
-                    } catch (Exception e) {
+                    } catch (final Exception e) {
                         jarFsTime = FileTime.fromMillis(Long.MAX_VALUE);
                     }
 

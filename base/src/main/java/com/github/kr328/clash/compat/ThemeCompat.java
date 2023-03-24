@@ -2,49 +2,56 @@ package com.github.kr328.clash.compat;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.io.IOException;
 import java.lang.ref.Cleaner;
 
 public final class ThemeCompat {
+    private static final Cleaner cleaner = Cleaner.create();
+
     static {
         CompatLibrary.load();
     }
 
     private static native boolean nativeIsSupported();
 
-    private static native boolean nativeIsNight();
-
-    private static native long nativeMonitor(@NotNull OnThemeChangedListener listener);
-
-    private static native void nativeDisposeMonitor(long ptr);
-
-    private static native void nativeReleaseMonitor(long ptr);
-
     public static boolean isSupported() {
         return nativeIsSupported();
     }
 
-    public static boolean isNight() {
+    private static native boolean nativeIsNight() throws IOException;
+
+    public static boolean isNight() throws IOException {
         return nativeIsNight();
     }
 
+    private static native long nativeAddListener(@NotNull OnThemeChangedListener listener) throws IOException;
+
+    private static native void nativeDisposeListener(long ptr);
+
+    private static native void nativeReleaseListener(long ptr);
+
     @NotNull
-    public static Disposable monitor(@NotNull final OnThemeChangedListener listener) {
-        final long ptr = nativeMonitor(listener);
+    public static Disposable addListener(
+            @NotNull final OnThemeChangedListener listener
+    ) throws IOException {
+        final long ptr = nativeAddListener(listener);
 
-        final Disposable disposable = () -> nativeDisposeMonitor(ptr);
+        final Disposable disposable = () -> nativeDisposeListener(ptr);
 
-        Disposable.cleaner.register(disposable, () -> nativeReleaseMonitor(ptr));
+        cleaner.register(disposable, () -> nativeReleaseListener(ptr));
 
         return disposable;
     }
 
     public interface Disposable {
-        Cleaner cleaner = Cleaner.create();
-
         void dispose();
     }
 
     public interface OnThemeChangedListener {
-        void onChanged();
+        void onChanged(final boolean isNight);
+
+        void onExited();
+
+        void onError(final Exception e);
     }
 }

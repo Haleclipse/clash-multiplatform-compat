@@ -1,87 +1,185 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.konan.target.Family
+import java.net.URL
+
 plugins {
-    java
+    kotlin("multiplatform")
+    kotlin("plugin.serialization")
     `maven-publish`
 }
 
-val currentOSName = System.getProperty("os.name").toLowerCase()
-val os = when {
-    currentOSName.contains("windows") -> "windows"
-    currentOSName.contains("linux") -> "linux"
-    else -> throw UnsupportedOperationException("Unsupported os: $currentOSName")
+kotlin {
+    targets {
+        mingwX64()
+        linuxX64()
+    }
 }
 
-val currentOSArch = System.getProperty("os.arch").toLowerCase()
-val archWith64 = when {
-    currentOSArch.contains("amd64") -> "amd64" to true
-    currentOSArch.contains("x86_64") -> "amd64" to true
-    currentOSArch.contains("x64") -> "amd64" to true
-    currentOSArch.contains("x86") -> "x86" to false
-    currentOSArch.contains("386") -> "x86" to false
-    currentOSArch.contains("686") -> "x86" to false
-    else -> throw UnsupportedOperationException("Unsupported arch: $currentOSArch")
-}
-val (arch, is64) = archWith64
+val packagesRoot = buildDir.resolve("kotlin-dependencies")
 
-val cmakeDir = buildDir.resolve("cmake")
-
-val prepare = task("prepareCompileJniLibs", type = Exec::class) {
-    inputs.dir(file("src/main/cpp"))
-    outputs.dir(cmakeDir)
-
-    workingDir(cmakeDir)
-    commandLine(
-        "cmake",
-        "-G", "Ninja",
-        "-DCMAKE_BUILD_TYPE=${if (System.getenv("DEBUG") != null) "Debug" else "Release"}",
-        "-DJAVA_HOME=${System.getProperty("java.home").replace(File.separatorChar, '/')}",
-        file("src/main/cpp")
+task("installPackages") {
+    val packages: List<Triple<String, String, String>> = listOf(
+        Triple("core", "x86_64", "dbus"),
+        Triple("extra", "x86_64", "libx11"),
+        Triple("extra", "any", "xorgproto"),
     )
-    if (!is64) {
-        environment("CFLAGS" to "${System.getenv("CFLAGS") ?: ""} -m32")
+
+    inputs.property("packages", packages)
+    outputs.dir(packagesRoot)
+
+    doFirst {
+        packages.forEach { (repository, architecture, packageName) ->
+            val packageDir = packagesRoot.resolve(packageName).resolve(architecture)
+            if (!packageDir.resolve(".PKGINFO").exists()) {
+                println("Installing $repository-$architecture-$packageName")
+
+                URL("https://www.archlinux.org/packages/$repository/$architecture/$packageName/download").openStream()
+                    .use {
+                        packageDir.mkdirs()
+
+                        exec {
+                            commandLine(
+                                "tar",
+                                "xv",
+                                "--zstd",
+                                "-C",
+                                packagesRoot.resolve(packageName).resolve(architecture)
+                            )
+                            errorOutput = System.out
+                            standardOutput = System.out
+                            standardInput = it
+                        }
+                    }
+            }
+        }
     }
 }
 
-val compile = task("compileJniLibs", type = Exec::class) {
-    dependsOn(prepare)
-
-    inputs.dir(file("src/main/cpp"))
-    outputs.dir(cmakeDir)
-
-    workingDir(cmakeDir)
-    commandLine("cmake", "--build", ".")
-}
-
-val copy = task("copyJniLibs", type = Sync::class) {
-    from(compile.outputs)
-
-    include("*.dll", "*.so")
-
-    rename {
-        val baseName = it.substring(0, it.indexOf('.'))
-        val extension = it.substring(it.indexOf('.') + 1)
-
-        "$baseName-$arch.$extension"
+kotlin {
+    targets {
+        withType(KotlinNativeTarget::class) {
+            binaries {
+                sharedLib {
+                    baseName = "compat"
+                }
+            }
+        }
     }
 
-    into(buildDir.resolve("jniLibs").resolve("com/github/kr328/clash/compat"))
-}
+    sourceSets {
+        val mingw = create("mingwMain") {
+            dependsOn(sourceSets["commonMain"])
+        }
 
-sourceSets {
-    named("main") {
-        resources.srcDir(buildDir.resolve("jniLibs"))
+        sourceSets["mingwX64Main"].dependsOn(mingw)
+
+        val linux = create("linuxMain") {
+            dependsOn(sourceSets["commonMain"])
+        }
+
+        sourceSets["linuxX64Main"].dependsOn(linux)
+    }
+
+    targets.withType(KotlinNativeTarget::class) {
+        compilations["main"].cinterops.create("java") {
+            defFile(file("src/commonMain/cinterops/java.def"))
+            packageName("java")
+
+            includeDirs(file("src/commonMain/cinterops/include"))
+
+            when (konanTarget.family) {
+                Family.MINGW -> {
+                    includeDirs(file("src/commonMain/cinterops/include/win32"))
+                }
+                Family.LINUX -> {
+                    includeDirs(file("src/commonMain/cinterops/include/linux"))
+                }
+                else -> {
+                    throw IllegalArgumentException("Unsupported target $konanTarget")
+                }
+            }
+
+            afterEvaluate {
+                tasks[interopProcessingTaskName].dependsOn(tasks["installPackages"])
+            }
+        }
+
+        when (konanTarget.family) {
+            Family.MINGW -> {
+                compilations["main"].cinterops.create("windows") {
+                    defFile("src/mingwMain/cinterops/windows.def")
+                    packageName("windows")
+                    extraOpts("-no-default-libs")
+
+                    afterEvaluate {
+                        tasks[interopProcessingTaskName].dependsOn(tasks["installPackages"])
+                    }
+                }
+            }
+            Family.LINUX -> {
+                compilations["main"].cinterops.create("linux") {
+                    defFile("src/linuxMain/cinterops/linux.def")
+                    packageName("linux")
+                    extraOpts("-no-default-libs")
+
+                    includeDirs(
+                        packagesRoot.resolve("dbus/x86_64/usr/include/dbus-1.0"),
+                        packagesRoot.resolve("dbus/x86_64/usr/lib/dbus-1.0/include"),
+                        packagesRoot.resolve("libx11/x86_64/usr/include"),
+                        packagesRoot.resolve("xorgproto/any/usr/include"),
+                    )
+
+                    binaries.all {
+                        linkerOpts += "-L" + packagesRoot.resolve("dbus/x86_64/usr/lib")
+                        linkerOpts += "-L" + packagesRoot.resolve("libx11/x86_64/usr/lib")
+                    }
+
+                    afterEvaluate {
+                        tasks[interopProcessingTaskName].dependsOn(tasks["installPackages"])
+                    }
+                }
+            }
+            else -> Unit
+        }
     }
 }
 
 publishing {
     publications {
-        create("jniLibs", MavenPublication::class) {
-            artifactId = "compat-$os-$arch"
+        val variants: List<Triple<String, String, String>> = listOf(
+            Triple("linux-amd64", "linkReleaseSharedLinuxX64", "libcompat-amd64.so"),
+            Triple("linux-amd64-debug", "linkDebugSharedLinuxX64", "libcompat-amd64.so"),
+            Triple("windows-amd64", "linkReleaseSharedMingwX64", "libcompat-amd64.dll"),
+            Triple("windows-amd64-debug", "linkDebugSharedMingwX64", "libcompat-amd64.dll"),
+        )
 
-            from(components["java"])
+        variants.forEach { (id: String, taskId: String, fileName: String) ->
+            val publishName = id.replace(Regex("-[a-z]")) {
+                it.value[1].uppercase()
+            }
+
+            create("compat${publishName.replaceFirstChar { it.uppercase() }}", MavenPublication::class) {
+                artifactId = "compat-$id"
+
+                val jarTask = tasks.register(
+                    "jniLibsJar[$id]",
+                    type = Jar::class
+                ) {
+                    archiveBaseName.set(id)
+
+                    isPreserveFileTimestamps = false
+                    entryCompression = ZipEntryCompression.DEFLATED
+
+                    from(tasks[taskId])
+                    into("com/github/kr328/clash/compat/")
+
+                    include("*.${fileName.split(".").last()}")
+
+                    rename { fileName }
+                }
+
+                artifact(jarTask)
+            }
         }
     }
-}
-
-afterEvaluate {
-    tasks["processResources"].dependsOn(copy)
 }

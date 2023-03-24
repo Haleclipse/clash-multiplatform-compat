@@ -14,13 +14,25 @@ public final class ShellCompat {
         CompatLibrary.load();
     }
 
-    private static native @Nullable String nativePickFile(long windowHandle, String windowTitle, @NotNull NativePickerFilter[] filters) throws IOException;
+    private static native boolean nativeIsSupported();
 
-    private static native void nativeLaunchFile(long windowHandle, final @Nullable String path) throws IOException;
+    public static boolean isSupported() {
+        return nativeIsSupported();
+    }
+
+    private static native @Nullable String nativeRunPickFile(
+            long windowHandle,
+            String windowTitle,
+            @NotNull NativePickerFilter[] filters
+    ) throws IOException;
 
     @Nullable
     @Blocking
-    public static Path pickFile(long windowHandle, @Nullable String windowTitle, @Nullable List<PickerFilter> filters) throws IOException {
+    public static Path runPickFile(
+            final long windowHandle,
+            @Nullable String windowTitle,
+            @Nullable List<PickerFilter> filters
+    ) throws IOException {
         if (windowTitle == null) {
             windowTitle = "Open...";
         }
@@ -33,7 +45,7 @@ public final class ShellCompat {
                 .map(f -> new NativePickerFilter(f.name, f.extensions.toArray(new String[0])))
                 .toArray(NativePickerFilter[]::new);
 
-        final String path = nativePickFile(windowHandle, windowTitle, nativeFilers);
+        final String path = nativeRunPickFile(windowHandle, windowTitle, nativeFilers);
         if (path != null) {
             return Path.of(path);
         }
@@ -41,36 +53,22 @@ public final class ShellCompat {
         return null;
     }
 
+    private static native void nativeRunLaunchFile(
+            long windowHandle,
+            final @Nullable String path
+    ) throws IOException;
+
     @NonBlocking
-    public static void launchFile(long windowHandle, @NotNull final Path path) throws IOException {
-        nativeLaunchFile(windowHandle, path.toAbsolutePath().toString());
+    public static void runLaunchFile(
+            final long windowHandle,
+            @NotNull final Path path
+    ) throws IOException {
+        nativeRunLaunchFile(windowHandle, path.toAbsolutePath().toString());
     }
 
-    public static final class PickerFilter {
-        private final String name;
-        private final List<String> extensions;
-
-        public PickerFilter(String name, List<String> extensions) {
-            this.name = name;
-            this.extensions = extensions;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public List<String> getExtensions() {
-            return extensions;
-        }
+    public record PickerFilter(String name, List<String> extensions) {
     }
 
-    private static class NativePickerFilter {
-        public final String name;
-        public final String[] extensions;
-
-        private NativePickerFilter(String name, String[] extensions) {
-            this.name = name;
-            this.extensions = extensions;
-        }
+    private record NativePickerFilter(String name, String[] extensions) {
     }
 }

@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    compileOnly("org.jetbrains:annotations:23.0.0")
+    compileOnly("org.jetbrains:annotations:24.0.1")
 }
 
 java {
@@ -13,7 +13,7 @@ java {
 
 publishing {
     publications {
-        create("base", MavenPublication::class) {
+        create("compat", MavenPublication::class) {
             artifactId = "compat"
 
             from(components["java"])

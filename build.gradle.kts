@@ -1,13 +1,19 @@
 val releaseTag = System.getenv("TAG")?.trim()?.takeIf(String::isNotEmpty) ?: "latest"
 
+plugins {
+    kotlin("multiplatform") version "1.8.10" apply false
+    kotlin("jvm") version "1.8.10" apply false
+    kotlin("plugin.serialization") version "1.8.10" apply false
+}
+
 subprojects {
     group = "com.github.kr328.clash.compat"
     version = releaseTag
 
     plugins.withId("java") {
         configure<JavaPluginExtension> {
-            sourceCompatibility = JavaVersion.VERSION_11
-            targetCompatibility = JavaVersion.VERSION_11
+            sourceCompatibility = JavaVersion.VERSION_16
+            targetCompatibility = JavaVersion.VERSION_16
         }
     }
 
@@ -53,6 +59,22 @@ subprojects {
                         name = "kr328app"
                         url = uri(releaseUrl)
                         credentials(PasswordCredentials::class)
+                    }
+                }
+                repositories.all {
+                    val repositoryName = name.replaceFirstChar { it.uppercase() }
+
+                    task("publishAllTo$repositoryName") {
+                        publications.withType(MavenPublication::class.java) {
+                            if (name.startsWith("compat")) {
+                                val taskName =
+                                    "publish${name.replaceFirstChar { it.uppercase() }}PublicationTo${repositoryName}Repository"
+
+                                afterEvaluate {
+                                    dependsOn(tasks[taskName])
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -9,22 +9,22 @@ public final class WindowCompat {
         CompatLibrary.load();
     }
 
-    private static native void nativeSetWindowFrameSize(long handle, int frame, int size);
+    private static native void nativeSetBorderless(long handle);
 
-    private static native void nativeSetWindowBorderless(long handle);
-
-    private static native void nativeSetWindowControlPosition(long handle, int control, int left, int top, int right, int bottom);
-
-    public static void setWindowBorderless(long handle) {
-        nativeSetWindowBorderless(handle);
+    public static void setBorderless(final long handle) {
+        nativeSetBorderless(handle);
     }
 
-    public static void setWindowFrameSize(long handle, @NotNull WindowFrame frame, int size) {
-        nativeSetWindowFrameSize(handle, Objects.requireNonNull(frame).ordinal(), size);
+    private static native void nativeSetFrameSize(long handle, int frame, int size);
+
+    public static void setFrameSize(final long handle, @NotNull final WindowFrame frame, final int size) {
+        nativeSetFrameSize(handle, Objects.requireNonNull(frame).ordinal(), size);
     }
 
-    public static void setWindowControlPosition(long handle, @NotNull WindowControl control, int left, int top, int right, int bottom) {
-        nativeSetWindowControlPosition(handle, Objects.requireNonNull(control).ordinal(), left, top, right, bottom);
+    private static native void nativeSetControlPosition(long handle, int control, int left, int top, int right, int bottom);
+
+    public static void setControlPosition(final long handle, @NotNull final WindowControl control, final int left, final int top, final int right, final int bottom) {
+        nativeSetControlPosition(handle, Objects.requireNonNull(control).ordinal(), left, top, right, bottom);
     }
 
     public enum WindowFrame {
