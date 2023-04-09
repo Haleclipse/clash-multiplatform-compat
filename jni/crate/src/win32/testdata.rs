@@ -1,5 +1,4 @@
-use rust_embed::RustEmbed;
-
-#[derive(RustEmbed)]
+#[cfg(test)]
+#[derive(rust_embed::RustEmbed)]
 #[folder = "testdata/"]
 pub struct TestData;

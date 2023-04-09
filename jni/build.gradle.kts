@@ -16,7 +16,7 @@ task("assemble") {
     dependsOn(tasks["assembleDebug"], tasks["assembleRelease"])
 }
 
-var targets = listOf(
+val targets = listOf(
     Triple("linux-amd64", "x86_64-unknown-linux-gnu", "libcompat.so"),
     Triple("windows-amd64", "x86_64-pc-windows-gnu", "compat.dll"),
 )

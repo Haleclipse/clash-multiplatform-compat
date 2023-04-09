@@ -82,12 +82,7 @@ pub extern "C" fn Java_com_github_kr328_clash_compat_NotifierCompat_nativeAdd(
         };
 
         #[cfg(windows)]
-        let notifier = {
-            let _ = app_id;
-            let _ = is_rtl;
-
-            crate::win32::notifier::add_notifier(listener, &app_id, &title, &icon_name, is_rtl != JNI_FALSE)?
-        };
+        let notifier = crate::win32::notifier::add_notifier(listener, &app_id, &title, &icon_name, is_rtl != JNI_FALSE)?;
 
         #[cfg(target_os = "linux")]
         let notifier = crate::linux::notifier::add_notifier(listener, &app_id, &title, &icon_name, is_rtl != JNI_FALSE)?;
