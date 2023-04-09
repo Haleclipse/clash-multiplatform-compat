@@ -4,6 +4,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,6 +53,18 @@ public final class CompatLibrary {
             }
 
             final String fileName = "libcompat-" + arch + extension;
+
+            final URL url;
+            if (System.getenv("COMPAT_LIBRARY_PATH") != null) {
+                try {
+                    url = Path.of(System.getenv("COMPAT_LIBRARY_PATH")).toUri().toURL();
+                } catch (final MalformedURLException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                url = Objects.requireNonNull(Loader.class.getResource("/com/github/kr328/clash/compat/" + fileName));
+            }
+
             try {
                 final Path extractPath;
                 if (overrideExtractPath != null) {
@@ -72,7 +85,6 @@ public final class CompatLibrary {
                     }));
                 }
 
-                final URL url = Objects.requireNonNull(Loader.class.getResource("/com/github/kr328/clash/compat/" + fileName));
                 if ("file".equals(url.getProtocol())) {
                     System.load(Path.of(url.toURI()).toAbsolutePath().toString());
                 } else {

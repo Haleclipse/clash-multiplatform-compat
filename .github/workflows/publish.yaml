@@ -21,13 +21,9 @@ jobs:
           distribution: zulu
           java-version: 17
           architecture: x64
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y tar zstd
       - name: Build & Publish
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: --no-daemon -Pkr328appUsername=${{ secrets.PUBLISH_USERNAME }} -Pkr328appPassword=${{ secrets.PUBLISH_PASSWORD }} publishAllToKr328app
+          arguments: --no-daemon -Pkr328appUsername=${{ secrets.PUBLISH_USERNAME }} -Pkr328appPassword=${{ secrets.PUBLISH_PASSWORD }} publishAllPublicationsToKr328appRepository
         env:
           TAG: ${{ github.event.release.tag_name }}

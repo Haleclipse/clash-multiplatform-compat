@@ -22,7 +22,7 @@ public final class ShellCompat {
 
     private static native @Nullable String nativeRunPickFile(
             long windowHandle,
-            String windowTitle,
+            @NotNull String windowTitle,
             @NotNull NativePickerFilter[] filters
     ) throws IOException;
 
@@ -66,9 +66,41 @@ public final class ShellCompat {
         nativeRunLaunchFile(windowHandle, path.toAbsolutePath().toString());
     }
 
-    public record PickerFilter(String name, List<String> extensions) {
+    private static native void nativeInstallIcon(@NotNull final String name, final byte @NotNull [] data) throws IOException;
+
+    public static void installIcon(@NotNull final String name, final byte @NotNull [] data) throws IOException {
+        nativeInstallIcon(name, data);
     }
 
-    private record NativePickerFilter(String name, String[] extensions) {
+    private static native void nativeInstallShortcut(
+            @NotNull final String applicationId,
+            @NotNull final String applicationName,
+            @NotNull final String iconName,
+            @NotNull final String executablePath,
+            @NotNull final String[] arguments
+    ) throws IOException;
+
+    public static void installShortcut(@NotNull final String applicationId,
+                                       @NotNull final String applicationName,
+                                       @NotNull final String iconName,
+                                       @NotNull final String executablePath,
+                                       @NotNull final String... arguments
+    ) throws IOException {
+        nativeInstallShortcut(applicationId, applicationName, iconName, executablePath, arguments);
+    }
+
+    private static native void nativeUninstallShortcut(
+            @NotNull final String applicationId,
+            @NotNull final String applicationName
+    ) throws IOException;
+
+    public static void uninstallShortcut(@NotNull final String applicationId, @NotNull final String applicationName) throws IOException {
+        nativeUninstallShortcut(applicationId, applicationName);
+    }
+
+    public record PickerFilter(@NotNull String name, @NotNull List<@NotNull String> extensions) {
+    }
+
+    private record NativePickerFilter(@NotNull String name, @NotNull String @NotNull [] extensions) {
     }
 }

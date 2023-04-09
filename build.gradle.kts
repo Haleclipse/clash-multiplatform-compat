@@ -61,22 +61,6 @@ subprojects {
                         credentials(PasswordCredentials::class)
                     }
                 }
-                repositories.all {
-                    val repositoryName = name.replaceFirstChar { it.uppercase() }
-
-                    task("publishAllTo$repositoryName") {
-                        publications.withType(MavenPublication::class.java) {
-                            if (name.startsWith("compat")) {
-                                val taskName =
-                                    "publish${name.replaceFirstChar { it.uppercase() }}PublicationTo${repositoryName}Repository"
-
-                                afterEvaluate {
-                                    dependsOn(tasks[taskName])
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }

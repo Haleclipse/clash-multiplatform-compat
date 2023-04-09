@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.lang.ref.Cleaner;
 
 public final class ThemeCompat {
-    private static final Cleaner cleaner = Cleaner.create();
+    private static final Cleaner holderCleaner = Cleaner.create();
 
     static {
         CompatLibrary.load();
@@ -26,32 +26,32 @@ public final class ThemeCompat {
 
     private static native long nativeAddListener(@NotNull OnThemeChangedListener listener) throws IOException;
 
-    private static native void nativeDisposeListener(long ptr);
-
     private static native void nativeReleaseListener(long ptr);
 
     @NotNull
-    public static Disposable addListener(
-            @NotNull final OnThemeChangedListener listener
-    ) throws IOException {
-        final long ptr = nativeAddListener(listener);
-
-        final Disposable disposable = () -> nativeDisposeListener(ptr);
-
-        cleaner.register(disposable, () -> nativeReleaseListener(ptr));
-
-        return disposable;
+    public static Disposable addListener(@NotNull final OnThemeChangedListener listener) throws IOException {
+        return new Holder(nativeAddListener(listener));
     }
 
     public interface Disposable {
         void dispose();
     }
 
+    @SuppressWarnings("unused")
     public interface OnThemeChangedListener {
         void onChanged(final boolean isNight);
+    }
 
-        void onExited();
+    private static class Holder implements Disposable {
+        private final Cleaner.Cleanable cleanable;
 
-        void onError(final Exception e);
+        public Holder(final long ptr) {
+            this.cleanable = holderCleaner.register(this, () -> nativeReleaseListener(ptr));
+        }
+
+        @Override
+        public void dispose() {
+            cleanable.clean();
+        }
     }
 }
