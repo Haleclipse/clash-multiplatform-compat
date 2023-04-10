@@ -17,20 +17,20 @@ lto = true
 panic = "abort"
 
 [dependencies]
-home = "0.5.4"
 rand = { version = "0.8" }
 cstr = "0.2"
-futures = { version = "0.3", default-features = false, features = ["thread-pool"] }
-once_cell = { version = "1.17", default-features = false }
 jni-sys = "0.3"
-ico = "0.3"
 
 [dev-dependencies]
 rust-embed = "6.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+home = "0.5.4"
 errno = "0.3"
+ico = "0.3"
+once_cell = { version = "1.17", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["thread-pool"] }
 zbus = { version = "3.11", default-features = false, features = ["async-io"] }
 x11 = { version = "2.21", features = ["xlib"] }
 
