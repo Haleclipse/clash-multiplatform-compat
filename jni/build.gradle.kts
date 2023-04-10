@@ -2,78 +2,57 @@ plugins {
     `maven-publish`
 }
 
-task("assembleDebug") {
-    group = "build"
-}
+fun configureTarget(id: String, target: String, debug: Boolean, fileName: String, bundleName: String) {
+    val compileTask = tasks.register("compileRust[$id]", type = Exec::class) {
+        group = "build"
 
-task("assembleRelease") {
-    group = "build"
-}
+        inputs.dir(file("crate/src"))
+        inputs.files(file("crate/Cargo.toml"), file("crate/Cargo.lock"), file("crate/Cross.toml"))
+        outputs.file(file("crate/target/$target/${if (debug) "debug" else "release"}/$fileName"))
 
-task("assemble") {
-    group = "build"
+        commandLine(listOf("cross", "build", "--target", target) + if (!debug) listOf("--release") else emptyList())
+        workingDir(file("crate"))
+    }
 
-    dependsOn(tasks["assembleDebug"], tasks["assembleRelease"])
-}
+    val jar = tasks.register("bundleJar[$id]", type = Jar::class) {
+        destinationDirectory.set(buildDir.resolve("jars"))
+        archiveBaseName.set(id)
+        entryCompression = ZipEntryCompression.DEFLATED
+        isPreserveFileTimestamps = false
 
-val targets = listOf(
-    Triple("linux-amd64", "x86_64-unknown-linux-gnu", "libcompat.so"),
-    Triple("windows-amd64", "x86_64-pc-windows-gnu", "compat.dll"),
-)
-targets.forEach { (id, target, fileName) ->
-    fun configureTask(debug: Boolean) {
-        task("compileRust${if (debug) "Debug" else "Release"}[$id]", type = Exec::class) {
-            group = "build"
+        from(compileTask) {
+            into("/com/github/kr328/clash/compat/")
 
-            inputs.dir(file("crate/src"))
-            inputs.files(file("crate/Cargo.toml"), file("crate/Cargo.lock"), file("crate/Cross.toml"))
-            outputs.file(file("crate/target/$target/${if (debug) "debug" else "release"}/$fileName"))
-
-            commandLine(listOf("cross", "build", "--target", target) + if (!debug) listOf("--release") else emptyList())
-            workingDir(file("crate"))
+            rename { bundleName }
         }
     }
 
-    configureTask(true)
-    configureTask(false)
+    val publishName = id.replace(Regex("^([a-z])|-([a-z])")) {
+        (it.groups[1] ?: it.groups[2])!!.value.replaceFirstChar { c -> c.uppercase() }
+    }
+
+    publishing.publications.register("compat$publishName", type = MavenPublication::class) {
+        artifactId = "compat-$id"
+
+        artifact(jar)
+    }
+
+    configurations.register(id) {
+        isCanBeConsumed = true
+        isCanBeResolved = false
+    }
+
+    artifacts.add(id, jar)
 }
+
+configureTarget("linux-amd64", "x86_64-unknown-linux-gnu", false, "libcompat.so", "libcompat-amd64.so")
+configureTarget("linux-amd64-debug", "x86_64-unknown-linux-gnu", true, "libcompat.so", "libcompat-amd64.so")
+configureTarget("windows-amd64", "x86_64-pc-windows-gnu", false, "compat.dll", "compat-amd64.dll")
+configureTarget("windows-amd64-debug", "x86_64-pc-windows-gnu", true, "compat.dll", "compat-amd64.dll")
 
 task("clean", type = Delete::class) {
     group = "build"
 
     delete(buildDir)
     delete("crate/target")
-}
-
-publishing {
-    publications {
-        fun configurePublication(id: String, debug: Boolean) {
-            val name = id.replace(Regex("-([a-z])")) { it.groups[1]!!.value }.replaceFirstChar { it.uppercase() }
-            val buildType = if (debug) "Debug" else "Release"
-
-            create("compat$name$buildType", type = MavenPublication::class) {
-                artifactId = if (debug) {
-                    "compat-$id-debug"
-                } else {
-                    "compat-$id"
-                }
-
-                val jar = tasks.register("bundleJar$buildType[$id]", type = Jar::class) {
-                    destinationDirectory.set(buildDir.resolve("jars"))
-                    archiveBaseName.set("$id-${if (debug) "debug" else "release"}")
-                    entryCompression = ZipEntryCompression.DEFLATED
-                    isPreserveFileTimestamps = false
-
-                    from(tasks["compileRust$buildType[$id]"])
-                }
-
-                artifact(jar)
-            }
-        }
-
-        targets.forEach { (id, _, _) ->
-            configurePublication(id, true)
-            configurePublication(id, false)
-        }
-    }
 }

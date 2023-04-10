@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.stream.Stream;
 
 public class LoadTest {
@@ -19,14 +20,22 @@ public class LoadTest {
     void setOverrideExtractPath() throws IOException {
         Assumptions.assumeTrue(System.getenv("COMPAT_LIBRARY_PATH") == null);
 
-        final Path tempDir = Files.createTempDirectory("compat-test");
+        final Path extractPath = Path.of("build", "compat-library");
 
-        CompatLibrary.setOverrideExtractPath(tempDir);
+        try (final Stream<Path> files = Files.walk(extractPath)) {
+            for (final Path file : files.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(file);
+            }
+        } catch (final IOException e) {
+            // ignored
+        }
+
+        CompatLibrary.setOverrideExtractPath(extractPath);
 
         CompatLibrary.load();
 
-        try (final Stream<Path> files = Files.list(tempDir)) {
-            Assertions.assertTrue(files.peek(System.out::println).anyMatch((p) -> p.endsWith(".so") || p.endsWith(".dll")));
+        try (final Stream<Path> files = Files.list(extractPath)) {
+            Assertions.assertTrue(files.map(Object::toString).anyMatch((p) -> p.endsWith(".so") || p.endsWith(".dll")));
         }
     }
 }

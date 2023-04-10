@@ -4,6 +4,9 @@ plugins {
 }
 
 dependencies {
+    testImplementation(project(":jni", configuration = "windows-amd64-debug"))
+    testImplementation(project(":jni", configuration = "linux-amd64-debug"))
+
     implementation("org.jetbrains:annotations:24.0.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
 }
