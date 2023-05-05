@@ -42,7 +42,9 @@ pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result
         joined_filters.push(b'\0');
 
         for extension in &filter.extensions {
-            joined_filters.extend_from_slice(extension.as_bytes());
+            let expr = format!("*.{extension}");
+
+            joined_filters.extend_from_slice(expr.as_bytes());
             joined_filters.push(b';');
         }
         joined_filters.push(b'\0');

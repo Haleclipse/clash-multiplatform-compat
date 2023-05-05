@@ -55,7 +55,8 @@ pub fn create_process(
         set_file_descriptor_inheritable(nul_file.0 as FileDescriptor, true)?;
 
         let executable = CString::new(executable)?;
-        let mut joined_arguments = String::new() + "\"" + &arguments.join("\" \"") + "\"\0";
+        let mut joined_arguments = format!("\"{}\"", arguments.join("\" \"")).into_bytes();
+        joined_arguments.push(0);
         let working_dir = CString::new(working_dir)?;
         let mut joined_environments = Vec::<u8>::new();
         for env in environments {

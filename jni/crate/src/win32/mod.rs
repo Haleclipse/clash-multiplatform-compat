@@ -5,6 +5,7 @@ pub mod notifier;
 pub mod process;
 pub mod shell;
 pub mod theme;
+pub mod version;
 pub mod window;
 
 mod icons;

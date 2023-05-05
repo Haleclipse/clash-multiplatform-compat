@@ -146,8 +146,8 @@ unsafe extern "system" fn menu_window_procedure(window: HWND, message: u32, w_pa
                             flags | TPM_LEFTALIGN
                         };
 
-                        let x = w_param.0 & 0xffff;
-                        let y = w_param.0 >> 16;
+                        let x = (w_param.0 & 0xffff) as i16;
+                        let y = (w_param.0 >> 16) as i16;
 
                         let id = TrackPopupMenuEx(menu, flags.0, x as i32, y as i32, window, None);
                         if id.0 != 0 {

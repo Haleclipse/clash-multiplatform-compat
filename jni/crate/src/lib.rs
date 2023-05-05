@@ -27,6 +27,19 @@ mod linux;
 pub extern "C" fn JNI_OnLoad(vm: *mut JavaVM, _: *mut c_void) -> jint {
     install_java_vm(vm);
 
+    #[cfg(windows)]
+    if !win32::version::is_supported() {
+        use crate::helper::{call::jcall, vm::attach_current_thread};
+        use cstr::cstr;
+
+        let env = attach_current_thread();
+        let class = jcall!(*env, FindClass, cstr!("java/lang/UnsupportedOperationException").as_ptr());
+
+        jcall!(*env, ThrowNew, class, cstr!("Unsupported windows version").as_ptr());
+
+        return -1;
+    }
+
     #[cfg(target_os = "linux")]
     linux::window::install_delegate();
 

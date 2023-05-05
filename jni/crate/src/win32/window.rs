@@ -14,10 +14,10 @@ use windows::Win32::{
         HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
         WindowsAndMessaging::{
             CallWindowProcA, DefWindowProcA, EnumChildWindows, GetSystemMenu, GetWindowLongPtrA, GetWindowRect, IsZoomed,
-            SendMessageA, SetWindowLongPtrA, SetWindowPos, TrackPopupMenu, GWLP_WNDPROC, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
-            HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT, NCCALCSIZE_PARAMS,
-            SM_CXPADDEDBORDER, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_COMMAND, WM_DESTROY, WM_MOVE,
-            WM_NCCALCSIZE, WM_NCHITTEST, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_SIZE, WM_SYSCOMMAND,
+            SendMessageA, SetWindowLongA, SetWindowLongPtrA, SetWindowPos, TrackPopupMenu, GWLP_WNDPROC, GWL_STYLE, HTBOTTOM,
+            HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT,
+            NCCALCSIZE_PARAMS, SM_CXPADDEDBORDER, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_COMMAND, WM_DESTROY,
+            WM_MOVE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_SIZE, WM_SYSCOMMAND, WS_THICKFRAME,
         },
     },
 };
@@ -39,6 +39,47 @@ struct Context {
     control_positions: [RECT; 2],
 }
 
+impl Context {
+    fn match_client_area(&self, global_x: i32, global_y: i32) -> u32 {
+        let context_position = self.position;
+        let (x, y) = (global_x - context_position.left, global_y - context_position.top);
+
+        for rect in &self.control_positions {
+            let rect = rect;
+            if rect.left < x && x < rect.right && rect.top < y && y < rect.bottom {
+                return HTCLIENT;
+            }
+        }
+
+        let width = context_position.right - context_position.left;
+        let height = context_position.bottom - context_position.top;
+        let edge_inset = self.frame_sizes[FRAME_EDGE_INSETS] as i32;
+
+        let in_left = x < edge_inset;
+        let in_top = y < edge_inset;
+        let in_right = x > width - edge_inset;
+        let in_bottom = y > height - edge_inset;
+
+        match () {
+            _ if in_top && in_left => HTTOPLEFT,
+            _ if in_top && in_right => HTTOPRIGHT,
+            _ if in_top => HTTOP,
+            _ if in_bottom && in_left => HTBOTTOMLEFT,
+            _ if in_bottom && in_right => HTBOTTOMRIGHT,
+            _ if in_bottom => HTBOTTOM,
+            _ if in_left => HTLEFT,
+            _ if in_right => HTRIGHT,
+            _ => {
+                return if y < self.frame_sizes[FRAME_TITLE_BAR] as i32 {
+                    HTCAPTION
+                } else {
+                    HTCLIENT
+                };
+            }
+        }
+    }
+}
+
 pub struct Hints {
     context: Arc<Mutex<Context>>,
 }
@@ -55,45 +96,6 @@ impl WindowHints for Hints {
 
     fn set_frame_size(&self, frame_type: usize, size: u32) {
         self.context.lock().unwrap().frame_sizes[frame_type] = size
-    }
-}
-
-fn match_client_area(context: &Context, global_x: i32, global_y: i32) -> u32 {
-    let context_position = context.position;
-    let (x, y) = (global_x - context_position.left, global_y - context_position.top);
-
-    for rect in &context.control_positions {
-        let rect = rect;
-        if rect.left < x && x < rect.right && rect.top < y && y < rect.bottom {
-            return HTCLIENT;
-        }
-    }
-
-    let width = context_position.right - context_position.left;
-    let height = context_position.bottom - context_position.top;
-    let edge_inset = context.frame_sizes[FRAME_EDGE_INSETS] as i32;
-
-    let in_left = x < edge_inset;
-    let in_top = y < edge_inset;
-    let in_right = x > width - edge_inset;
-    let in_bottom = y > height - edge_inset;
-
-    match () {
-        _ if in_top && in_left => HTTOPLEFT,
-        _ if in_top && in_right => HTTOPRIGHT,
-        _ if in_top => HTTOP,
-        _ if in_bottom && in_left => HTBOTTOMLEFT,
-        _ if in_bottom && in_right => HTBOTTOMRIGHT,
-        _ if in_bottom => HTBOTTOM,
-        _ if in_left => HTLEFT,
-        _ if in_right => HTRIGHT,
-        _ => {
-            return if y < context.frame_sizes[FRAME_TITLE_BAR] as i32 {
-                HTCAPTION
-            } else {
-                HTCLIENT
-            };
-        }
     }
 }
 
@@ -129,7 +131,7 @@ unsafe extern "system" fn delegated_window_procedure(window: HWND, message: u32,
         WM_NCHITTEST => {
             let context = context.lock().unwrap();
 
-            let area = match_client_area(&context, (l_param.0 & 0xffff) as i32, (l_param.0 >> 16) as i32);
+            let area = context.match_client_area((l_param.0 & 0xffff) as i16 as i32, (l_param.0 >> 16) as i16 as i32);
 
             if context.root == window {
                 return LRESULT(area as isize);
@@ -169,7 +171,7 @@ unsafe extern "system" fn delegated_window_procedure(window: HWND, message: u32,
             let root = context.lock().unwrap().root;
 
             if w_param.0 as u32 == HTCAPTION {
-                let (x, y) = ((l_param.0 & 0xffff) as i32, (l_param.0 >> 16) as i32);
+                let (x, y) = ((l_param.0 & 0xffff) as i16 as i32, (l_param.0 >> 16) as i16 as i32);
                 let menu = GetSystemMenu(root, FALSE);
 
                 TrackPopupMenu(menu, Default::default(), x, y, 0, root, None);
@@ -225,6 +227,8 @@ pub unsafe extern "system" fn attach_to_window(window: HWND, l_param: LPARAM) ->
 pub fn set_borderless(window: i64) -> Result<Box<dyn WindowHints>, Box<dyn std::error::Error>> {
     unsafe {
         let window = HWND(window as isize);
+
+        SetWindowLongA(window, GWL_STYLE, WS_THICKFRAME.0 as i32);
 
         let margin = MARGINS {
             cxLeftWidth: 0,

@@ -1,11 +1,15 @@
+import java.util.*
+
 plugins {
     java
     `maven-publish`
 }
 
 dependencies {
-    testImplementation(project(":jni", configuration = "windows-amd64-debug"))
-    testImplementation(project(":jni", configuration = "linux-amd64-debug"))
+    if (System.getenv("COMPAT_LIBRARY_PATH") == null) {
+        testImplementation(project(":jni", configuration = "windows-amd64-debug"))
+        testImplementation(project(":jni", configuration = "linux-amd64-debug"))
+    }
 
     implementation("org.jetbrains:annotations:24.0.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
@@ -18,7 +22,7 @@ java {
 tasks.test {
     useJUnitPlatform()
 
-    jvmArgs = jvmArgs!! + listOf(
+    jvmArgs = Objects.requireNonNull(jvmArgs) + listOf(
         "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
         "--add-opens", "java.base/java.io=ALL-UNNAMED",
         "--add-opens", "java.desktop/java.awt=ALL-UNNAMED",

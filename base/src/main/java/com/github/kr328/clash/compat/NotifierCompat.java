@@ -50,7 +50,7 @@ public final class NotifierCompat {
         void onMenuActive(short id);
     }
 
-    interface MenuItem {
+    public interface MenuItem {
         record Item(@NotNull String title, short id) implements MenuItem {
         }
 
