@@ -1,19 +1,26 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+};
 
-use zbus::{dbus_interface, fdo, zvariant::ObjectPath, SignalContext};
-
-use crate::linux::dbus::dbus_menu::DBUS_MENU_PATH;
+use crate::linux::dbus::dbus_menu::{DBUS_MENU_PATH, DBUS_MENU_PATH_NONE};
+use zbus::{dbus_interface, fdo, zvariant::ObjectPath, Connection, SignalContext};
 
 pub const NOTIFIER_ITEM_PATH: &str = "/StatusNotifierItem";
 
-struct NotifierItemData<L: FnMut() + Send + Sync + 'static> {
+pub trait Listener: FnMut() + Send + Sync + 'static {}
+
+impl<T: FnMut() + Send + Sync + 'static> Listener for T {}
+
+struct NotifierItemData<L: Listener> {
     listener: L,
     app_id: String,
     icon: String,
     title: String,
+    menu_available: bool,
 }
 
-pub struct NotifierItem<L: FnMut() + Send + Sync + 'static = fn()> {
+pub struct NotifierItem<L: Listener> {
     data: Arc<Mutex<NotifierItemData<L>>>,
 }
 
@@ -24,14 +31,12 @@ impl<L: FnMut() + Send + Sync + 'static> Clone for NotifierItem<L> {
 }
 
 #[dbus_interface(name = "org.kde.StatusNotifierItem")]
-impl<L: FnMut() + Send + Sync + 'static> NotifierItem<L> {
+impl<L: Listener> NotifierItem<L> {
     async fn activate(&self, _x: i32, _y: i32) {
         (self.data.lock().unwrap().listener)();
     }
 
     async fn context_menu(&self, _x: i32, _y: i32) -> () {}
-
-    async fn provide_xdg_activation_token(&self, _token: &str) {}
 
     async fn scroll(&self, _delta: i32, _orientation: &str) {}
 
@@ -105,7 +110,11 @@ impl<L: FnMut() + Send + Sync + 'static> NotifierItem<L> {
 
     #[dbus_interface(property)]
     async fn menu(&self) -> ObjectPath {
-        ObjectPath::try_from(DBUS_MENU_PATH).unwrap()
+        if self.data.lock().unwrap().menu_available {
+            ObjectPath::try_from(DBUS_MENU_PATH).unwrap()
+        } else {
+            ObjectPath::try_from(DBUS_MENU_PATH_NONE).unwrap()
+        }
     }
 
     #[dbus_interface(property)]
@@ -144,7 +153,7 @@ impl<L: FnMut() + Send + Sync + 'static> NotifierItem<L> {
     }
 }
 
-impl<L: FnMut() + Send + Sync + 'static> NotifierItem<L> {
+impl<L: Listener> NotifierItem<L> {
     pub fn new(listener: L, app_id: &str, title: &str, icon: &str) -> Self {
         Self {
             data: Arc::new(Mutex::new(NotifierItemData {
@@ -152,7 +161,17 @@ impl<L: FnMut() + Send + Sync + 'static> NotifierItem<L> {
                 app_id: app_id.to_owned(),
                 icon: icon.to_owned(),
                 title: title.to_owned(),
+                menu_available: false,
             })),
         }
+    }
+
+    pub async fn set_menu_available(&self, conn: &Connection, available: bool) -> Result<(), Box<dyn Error>> {
+        self.data.lock().unwrap().menu_available = available;
+
+        NotifierItem::<L>::new_menu(&SignalContext::new(conn, NOTIFIER_ITEM_PATH)?).await?;
+        NotifierItem::<L>::menu_changed(self, &SignalContext::new(conn, NOTIFIER_ITEM_PATH)?).await?;
+
+        Ok(())
     }
 }

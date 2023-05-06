@@ -39,6 +39,8 @@ public class NotifierTest {
                     }
                 });
 
+        Thread.sleep(1000 * 2);
+
         notifier.setMenuItems(List.of(
                 new NotifierCompat.MenuItem.Item("Item 114", (short) 114),
                 new NotifierCompat.MenuItem.SubMenu("Sub Item", List.of(

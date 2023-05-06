@@ -3,8 +3,8 @@ use std::{error::Error, ffi::CString, iter::once, os::fd::RawFd, ptr::null};
 use cstr::cstr;
 
 use libc::{
-    c_char, c_int, dup2, fchdir, fexecve, fork, kill, open, pid_t, waitpid, O_CLOEXEC, O_DIRECTORY, O_RDONLY, O_RDWR, SIGKILL,
-    STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
+    c_char, c_int, close, dup2, fchdir, fexecve, fork, kill, open, pid_t, waitpid, O_CLOEXEC, O_DIRECTORY, O_RDONLY, O_RDWR,
+    SIGKILL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 
 use crate::{common::file::FileDescriptor, linux::errno::syscall, utils::scoped::Scoped};
@@ -44,27 +44,28 @@ pub fn create_process(
                         .unwrap();
                     }
 
-                    if let Ok(dir) = std::fs::read_dir("/proc/self/fd") {
-                        for entry in dir.into_iter() {
-                            if let Ok(entry) = entry {
-                                let fd = entry.file_name().to_str().unwrap().parse::<i32>();
-                                if let Ok(fd) = fd {
-                                    if fd == *executable_fd || fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO {
-                                        continue;
-                                    }
-
-                                    let fd = fd as FileDescriptor;
-                                    if extra_fds.contains(&fd) {
-                                        continue;
-                                    }
-                                }
-                            }
+                    let opened_fds = std::fs::read_dir("/proc/self/fd")
+                        .unwrap()
+                        .into_iter()
+                        .map(|f| f.unwrap())
+                        .map(|f| f.file_name().to_str().unwrap().parse::<i32>().unwrap())
+                        .collect::<Vec<_>>();
+                    for fd in opened_fds {
+                        if fd == *executable_fd || fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO {
+                            continue;
                         }
+
+                        let fd = fd as FileDescriptor;
+                        if extra_fds.contains(&fd) {
+                            continue;
+                        }
+
+                        close(fd as i32);
                     }
 
                     let arguments = arguments
                         .iter()
-                        .map(|s| CString::new(s.as_bytes()).unwrap())
+                        .map(|s| CString::new(s.as_str()).unwrap())
                         .collect::<Vec<CString>>();
                     let arguments = arguments
                         .iter()
@@ -74,7 +75,7 @@ pub fn create_process(
 
                     let environments = environments
                         .iter()
-                        .map(|s| CString::new(s.as_bytes()).unwrap())
+                        .map(|s| CString::new(s.as_str()).unwrap())
                         .collect::<Vec<CString>>();
                     let environments = environments
                         .iter()

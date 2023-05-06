@@ -10,22 +10,27 @@ use zbus::{
     Connection, SignalContext,
 };
 
+pub trait Listener: FnMut(u16) + Sync + Send + 'static {}
+
+impl<T: FnMut(u16) + Sync + Send + 'static> Listener for T {}
+
 pub const DBUS_MENU_PATH: &str = "/MenuBar";
+pub const DBUS_MENU_PATH_NONE: &str = "/NO_DBUSMENU";
 
 pub enum Item {
     Item(u16, String),
     Children(String, Vec<i32>),
 }
 
-struct DBusMenuData<L: FnMut(u16) + Sync + Send + 'static> {
+struct DBusMenuData<L: Listener> {
     listener: L,
     is_rtl: bool,
     items: HashMap<i32, Item>,
     version: u32,
 }
 
-impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenuData<L> {
-    pub fn set_items(&mut self, items: HashMap<i32, Item>) -> Result<(), Box<dyn Error>> {
+impl<L: Listener> DBusMenuData<L> {
+    pub fn set_items(&mut self, items: HashMap<i32, Item>) -> Result<u32, Box<dyn Error>> {
         for (_, item) in &items {
             if let Item::Children(_, children) = item {
                 if !children.iter().all(|id| items.contains_key(id)) {
@@ -41,7 +46,7 @@ impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenuData<L> {
         self.items = items;
         self.version += 1;
 
-        Ok(())
+        Ok(self.version)
     }
 
     fn get_item(&self, index: i32, depth: isize) -> Option<(i32, HashMap<&'static str, Value<'static>>, Vec<Value<'static>>)> {
@@ -101,18 +106,18 @@ impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenuData<L> {
     }
 }
 
-pub struct DBusMenu<L: FnMut(u16) + Sync + Send + 'static = fn(u16)> {
+pub struct DBusMenu<L: Listener> {
     data: Arc<Mutex<DBusMenuData<L>>>,
 }
 
-impl<L: FnMut(u16) + Sync + Send + 'static> Clone for DBusMenu<L> {
+impl<L: Listener> Clone for DBusMenu<L> {
     fn clone(&self) -> Self {
         DBusMenu { data: self.data.clone() }
     }
 }
 
 #[dbus_interface(name = "com.canonical.dbusmenu")]
-impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenu<L> {
+impl<L: Listener> DBusMenu<L> {
     async fn about_to_show(&self, _id: i32) -> bool {
         false
     }
@@ -184,10 +189,7 @@ impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenu<L> {
     }
 
     #[dbus_interface(signal)]
-    async fn items_properties_updated(ctx: &SignalContext<'_>) -> zbus::Result<()> {}
-
-    #[dbus_interface(signal)]
-    async fn layout_updated(ctx: &SignalContext<'_>) -> zbus::Result<()> {}
+    async fn layout_updated(ctx: &SignalContext<'_>, revision: u32, parent: i32) -> zbus::Result<()> {}
 
     #[dbus_interface(property)]
     async fn icon_theme_path(&self) -> fdo::Result<Vec<String>> {
@@ -210,25 +212,22 @@ impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenu<L> {
     }
 }
 
-impl<L: FnMut(u16) + Sync + Send + 'static> DBusMenu<L> {
+impl<L: Listener> DBusMenu<L> {
     pub fn new(listener: L, is_rtl: bool) -> Self {
-        let mut default_items = HashMap::new();
-        default_items.insert(0, Item::Children("".to_owned(), vec![]));
-
         DBusMenu {
             data: Arc::new(Mutex::new(DBusMenuData {
                 listener,
                 is_rtl,
-                items: default_items,
+                items: HashMap::new(),
                 version: 0,
             })),
         }
     }
 
     pub async fn set_items(&self, conn: &Connection, items: HashMap<i32, Item>) -> Result<(), Box<dyn Error>> {
-        self.data.lock().unwrap().set_items(items)?;
+        let new_version = self.data.lock().unwrap().set_items(items)?;
 
-        DBusMenu::<L>::layout_updated(&SignalContext::new(conn, DBUS_MENU_PATH)?).await?;
+        DBusMenu::<L>::layout_updated(&SignalContext::new(conn, DBUS_MENU_PATH)?, new_version, 0).await?;
 
         Ok(())
     }

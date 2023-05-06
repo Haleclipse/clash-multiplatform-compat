@@ -10,7 +10,9 @@ use crate::{
         notifier::{Listener, MenuItem},
     },
     linux::dbus::{
+        dbus_menu,
         dbus_menu::{DBusMenu, Item, DBUS_MENU_PATH},
+        notifier_item,
         notifier_item::{NotifierItem, NOTIFIER_ITEM_PATH},
         notifier_watcher::StatusNotifierWatcherProxy,
     },
@@ -39,8 +41,9 @@ pub fn is_supported() -> bool {
     }
 }
 
-struct Notifier<ML: FnMut(u16) + Sync + Send + 'static> {
+struct Notifier<IL: notifier_item::Listener, ML: dbus_menu::Listener> {
     conn: Connection,
+    item: NotifierItem<IL>,
     menu: DBusMenu<ML>,
 }
 
@@ -70,7 +73,7 @@ impl BuildContext {
     }
 }
 
-impl<ML: FnMut(u16) + Sync + Send + 'static> notifier::Notifier for Notifier<ML> {
+impl<IL: notifier_item::Listener, ML: dbus_menu::Listener> notifier::Notifier for Notifier<IL, ML> {
     fn set_menu(&self, layout: Option<&[MenuItem]>) -> Result<(), Box<dyn Error>> {
         block_on(async {
             if let Some(layout) = layout {
@@ -88,11 +91,12 @@ impl<ML: FnMut(u16) + Sync + Send + 'static> notifier::Notifier for Notifier<ML>
                 ctx.items.insert(0, Item::Children("".to_string(), root));
 
                 self.menu.set_items(&self.conn, ctx.items).await?;
-            } else {
-                let mut root = HashMap::new();
-                root.insert(0 as i32, Item::Children("".to_owned(), vec![]));
 
-                self.menu.set_items(&self.conn, root).await?;
+                self.item.set_menu_available(&self.conn, true).await?;
+            } else {
+                self.menu.set_items(&self.conn, HashMap::new()).await?;
+
+                self.item.set_menu_available(&self.conn, false).await?;
             }
 
             Ok(())
@@ -128,7 +132,7 @@ pub fn add_notifier(
             .register_status_notifier_item(NOTIFIER_ITEM_PATH)
             .await?;
 
-        Ok(Box::new(Notifier { conn, menu }) as Box<dyn notifier::Notifier>)
+        Ok(Box::new(Notifier { conn, item, menu }) as Box<dyn notifier::Notifier>)
     })
 }
 
@@ -165,6 +169,8 @@ mod tests {
         install_icon(TEST_ICON_NAME, &data)?;
 
         let notifier = add_notifier(ListenerImpl {}, TEST_APP_ID, TEST_APP_NAME, TEST_ICON_NAME, false)?;
+
+        std::thread::sleep(Duration::from_secs(5));
 
         notifier.set_menu(Some(&[
             MenuItem::Item {
