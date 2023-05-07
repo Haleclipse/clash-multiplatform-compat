@@ -12,9 +12,10 @@ use windows::{
         Storage::FileSystem::{CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING},
         System::Threading::{
             CreateProcessA, GetExitCodeProcess, InitializeProcThreadAttributeList, TerminateProcess, UpdateProcThreadAttribute,
-            EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
+            CREATE_NO_WINDOW, EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOA, STARTUPINFOEXA,
         },
+        UI::WindowsAndMessaging::SW_HIDE,
     },
 };
 
@@ -121,6 +122,7 @@ pub fn create_process(
         startup_info.StartupInfo.hStdOutput = stdout;
         startup_info.StartupInfo.hStdError = stderr;
         startup_info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup_info.StartupInfo.wShowWindow = SW_HIDE.0 as u16;
         startup_info.lpAttributeList = LPPROC_THREAD_ATTRIBUTE_LIST(attributes.as_mut_ptr().cast());
 
         let mut process_info = PROCESS_INFORMATION::default();
@@ -130,7 +132,7 @@ pub fn create_process(
             None,
             None,
             TRUE,
-            EXTENDED_STARTUPINFO_PRESENT,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW,
             Some(joined_environments.as_ptr().cast()),
             PCSTR(working_dir.as_ptr().cast()),
             &startup_info.StartupInfo as *const STARTUPINFOA,

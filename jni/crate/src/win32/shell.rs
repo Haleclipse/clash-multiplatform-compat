@@ -14,15 +14,15 @@ use windows::{
         Storage::EnhancedStorage::PKEY_AppUserModel_ID,
         System::Com::{
             CoCreateInstance, CoInitializeEx, IPersistFile, StructuredStorage::PropVariantClear, CLSCTX_INPROC_SERVER,
-            COINIT_MULTITHREADED, STGM_READ,
+            COINIT_MULTITHREADED,
         },
         UI::{
             Controls::Dialogs::{GetOpenFileNameA, OFN_FILEMUSTEXIST, OPENFILENAMEA},
             Shell::{
-                PropertiesSystem::{IPropertyStore, InitPropVariantFromStringAsVector, PropVariantToStringAlloc},
+                PropertiesSystem::{IPropertyStore, InitPropVariantFromStringAsVector},
                 *,
             },
-            WindowsAndMessaging::SW_SHOW,
+            WindowsAndMessaging::{SW_HIDE, SW_SHOW},
         },
     },
 };
@@ -119,40 +119,6 @@ fn get_shortcut_path(name: &str) -> Result<PathBuf, Box<dyn Error>> {
     Ok(Path::new(&programs_dir).join(name).with_extension("lnk"))
 }
 
-fn load_shortcut_app_id(name: &str) -> Result<String, Box<dyn Error>> {
-    initialize_com();
-
-    unsafe {
-        let link_path = get_shortcut_path(name)?;
-
-        if !link_path.exists() {
-            return Err("file not found".into());
-        }
-
-        let shell_link: IShellLinkA = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
-
-        shell_link
-            .cast::<IPersistFile>()?
-            .Load(PCWSTR(string_to_os_utf16(link_path.to_str().unwrap()).as_ptr()), STGM_READ)?;
-
-        let mut user_model_id = shell_link.cast::<IPropertyStore>()?.GetValue(&PKEY_AppUserModel_ID)?;
-
-        let ret = PropVariantToStringAlloc(&user_model_id).map(|s| s.to_string());
-
-        PropVariantClear(&mut user_model_id).ok();
-
-        Ok(ret??.to_string())
-    }
-}
-
-pub fn is_shortcut_installed(app_id: &str, name: &str) -> bool {
-    if let Ok(current_app_id) = load_shortcut_app_id(name) {
-        app_id == current_app_id
-    } else {
-        false
-    }
-}
-
 pub fn install_shortcut(
     app_id: &str,
     name: &str,
@@ -162,9 +128,7 @@ pub fn install_shortcut(
 ) -> Result<(), Box<dyn Error>> {
     initialize_com();
 
-    if is_shortcut_installed(app_id, name) {
-        return Ok(());
-    }
+    _ = uninstall_shortcut(app_id, name);
 
     unsafe {
         let link_path = get_shortcut_path(name)?;
@@ -178,6 +142,7 @@ pub fn install_shortcut(
         shell_link.SetArguments(PCSTR(arguments.as_ptr().cast()))?;
         shell_link.SetWorkingDirectory(PCSTR(working_dir.as_ptr().cast()))?;
         shell_link.SetIconLocation(PCSTR(icon.as_ptr().cast()), 0)?;
+        shell_link.SetShowCmd(SW_HIDE)?;
 
         let properties: IPropertyStore = shell_link.cast()?;
 
@@ -214,7 +179,7 @@ mod tests {
     use crate::win32::{
         icons::install_icon,
         notification::send_notification,
-        shell::{install_shortcut, is_shortcut_installed, uninstall_shortcut},
+        shell::{install_shortcut, uninstall_shortcut},
         testdata::TestData,
     };
 
@@ -225,9 +190,7 @@ mod tests {
 
     #[test]
     pub fn create_shortcut() -> Result<(), Box<dyn Error>> {
-        if is_shortcut_installed(TEST_APP_ID, TEST_APP_NAME) {
-            uninstall_shortcut("", TEST_APP_NAME)?;
-        }
+        _ = uninstall_shortcut(TEST_APP_ID, TEST_APP_NAME);
 
         let icon = TestData::get(TEST_APP_ICON_PATH).unwrap().data;
 
