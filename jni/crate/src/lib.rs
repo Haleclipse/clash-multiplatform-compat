@@ -4,6 +4,7 @@ use jni_sys::{jint, JavaVM, JNI_VERSION_1_8};
 
 use crate::helper::vm::install_java_vm;
 
+mod app;
 mod file;
 mod notification;
 mod notifier;
