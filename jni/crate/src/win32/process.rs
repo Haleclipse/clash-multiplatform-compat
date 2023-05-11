@@ -22,7 +22,7 @@ use windows::{
 use crate::{
     common::file::FileDescriptor,
     utils::scoped::Scoped,
-    win32::{error::Error, file::set_file_descriptor_inheritable},
+    win32::{error::Error, file::set_file_descriptor_inheritable, strings::join_arguments},
 };
 
 fn close_handle(h: HANDLE) {
@@ -56,7 +56,7 @@ pub fn create_process(
         set_file_descriptor_inheritable(nul_file.0 as FileDescriptor, true)?;
 
         let executable = CString::new(executable)?;
-        let mut joined_arguments = format!("\"{}\"", arguments.join("\" \"")).into_bytes();
+        let mut joined_arguments = join_arguments(arguments).into_bytes();
         joined_arguments.push(0);
         let working_dir = CString::new(working_dir)?;
         let mut joined_environments = Vec::<u8>::new();

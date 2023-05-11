@@ -1,8 +1,10 @@
 use std::{
     error::Error,
     ffi::{CStr, CString},
+    iter::once,
     mem::size_of,
     path::{Path, PathBuf},
+    ptr::null_mut,
     sync::Once,
 };
 
@@ -14,12 +16,12 @@ use windows::{
         Storage::EnhancedStorage::PKEY_AppUserModel_ID,
         System::Com::{
             CoCreateInstance, CoInitializeEx, IPersistFile, StructuredStorage::PropVariantClear, CLSCTX_INPROC_SERVER,
-            COINIT_MULTITHREADED,
+            COINIT_MULTITHREADED, STGM_READ,
         },
         UI::{
             Controls::Dialogs::{GetOpenFileNameA, OFN_FILEMUSTEXIST, OPENFILENAMEA},
             Shell::{
-                PropertiesSystem::{IPropertyStore, InitPropVariantFromStringAsVector},
+                PropertiesSystem::{IPropertyStore, InitPropVariantFromStringAsVector, PropVariantToString},
                 *,
             },
             WindowsAndMessaging::{SW_HIDE, SW_SHOW},
@@ -30,7 +32,11 @@ use windows::{
 use crate::{
     common::shell::FileFilter,
     win32,
-    win32::{icons, icons::get_icons_path, strings::string_to_os_utf16},
+    win32::{
+        icons,
+        icons::get_icons_path,
+        strings::{join_arguments, string_to_os_utf16},
+    },
 };
 
 pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result<Option<PathBuf>, Box<dyn Error>> {
@@ -119,6 +125,53 @@ fn get_shortcut_path(name: &str) -> Result<PathBuf, Box<dyn Error>> {
     Ok(Path::new(&programs_dir).join(name).with_extension("lnk"))
 }
 
+fn valid_shortcut(app_id: &str, name: &str, icon: &str, executable: &str, arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    let link_path = get_shortcut_path(name)?;
+    if !link_path.exists() {
+        return Err("file not found".into());
+    }
+
+    unsafe {
+        let shell_link: IShellLinkA = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+
+        let persist_file: IPersistFile = shell_link.cast()?;
+        let link_path = link_path.to_string_lossy().encode_utf16().chain(once(0)).collect::<Vec<_>>();
+        persist_file.Load(PCWSTR(link_path.as_ptr()), STGM_READ)?;
+
+        let properties_store: IPropertyStore = shell_link.cast()?;
+
+        let mut buffer = [0u16; MAX_PATH as usize];
+
+        let app_id_prop = properties_store.GetValue(&PKEY_AppUserModel_ID)?;
+        PropVariantToString(&app_id_prop, &mut buffer)?;
+
+        let end = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
+        if String::from_utf16(&buffer[..end])? != app_id {
+            return Err("application id not match".into());
+        }
+
+        let mut buffer = [0u8; MAX_PATH as usize];
+
+        let mut icon_index = -1;
+        shell_link.GetIconLocation(&mut buffer, &mut icon_index)?;
+        if CStr::from_bytes_until_nul(&buffer)?.to_str()? != get_icons_path(icon)?.to_string_lossy() || icon_index != 0 {
+            return Err("icon not match".into());
+        }
+
+        shell_link.GetPath(&mut buffer, null_mut(), SLGP_RAWPATH.0 as u32)?;
+        if CStr::from_bytes_until_nul(&buffer)?.to_str()? != executable {
+            return Err("executable not match".into());
+        }
+
+        shell_link.GetArguments(&mut buffer)?;
+        if CStr::from_bytes_until_nul(&buffer)?.to_str()? != join_arguments(arguments) {
+            return Err("arguments not match".into());
+        }
+    }
+
+    Ok(())
+}
+
 pub fn install_shortcut(
     app_id: &str,
     name: &str,
@@ -128,13 +181,17 @@ pub fn install_shortcut(
 ) -> Result<(), Box<dyn Error>> {
     initialize_com();
 
+    if let Ok(_) = valid_shortcut(app_id, name, icon, executable, arguments) {
+        return Ok(());
+    }
+
     _ = uninstall_shortcut(app_id, name);
 
     unsafe {
         let link_path = get_shortcut_path(name)?;
         let icon = CString::new(get_icons_path(icon)?.to_str().unwrap())?;
         let executable = CString::new(executable)?;
-        let arguments = CString::new(arguments.join(" "))?;
+        let arguments = CString::new(join_arguments(arguments))?;
         let working_dir = CString::new(std::env::current_dir()?.to_str().unwrap())?;
 
         let shell_link: IShellLinkA = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
@@ -189,9 +246,14 @@ mod tests {
     const TEST_APP_ICON_PATH: &str = "clash-multiplatform.ico";
 
     #[test]
-    pub fn create_shortcut() -> Result<(), Box<dyn Error>> {
-        _ = uninstall_shortcut(TEST_APP_ID, TEST_APP_NAME);
+    pub fn remove_shortcut() -> Result<(), Box<dyn Error>> {
+        uninstall_shortcut(TEST_APP_NAME, TEST_APP_ID)?;
 
+        Ok(())
+    }
+
+    #[test]
+    pub fn create_shortcut() -> Result<(), Box<dyn Error>> {
         let icon = TestData::get(TEST_APP_ICON_PATH).unwrap().data;
 
         install_icon(TEST_APP_ICON_NAME, &icon)?;
