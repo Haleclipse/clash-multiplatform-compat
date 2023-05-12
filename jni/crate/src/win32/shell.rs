@@ -14,9 +14,15 @@ use windows::{
     Win32::{
         Foundation::{GetLastError, ERROR_SUCCESS, HWND, MAX_PATH, TRUE},
         Storage::EnhancedStorage::PKEY_AppUserModel_ID,
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, IPersistFile, StructuredStorage::PropVariantClear, CLSCTX_INPROC_SERVER,
-            COINIT_MULTITHREADED, STGM_READ,
+        System::{
+            Com::{
+                CoCreateInstance, CoInitializeEx, IPersistFile, StructuredStorage::PropVariantClear, CLSCTX_INPROC_SERVER,
+                COINIT_MULTITHREADED, STGM_READ,
+            },
+            Registry::{
+                RegCloseKey, RegDeleteValueA, RegOpenKeyExA, RegQueryValueExA, RegSetValueExA, HKEY, HKEY_CURRENT_USER,
+                KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SAM_FLAGS, REG_SZ, REG_VALUE_TYPE,
+            },
         },
         UI::{
             Controls::Dialogs::{GetOpenFileNameA, OFN_FILEMUSTEXIST, OPENFILENAMEA},
@@ -31,6 +37,7 @@ use windows::{
 
 use crate::{
     common::shell::FileFilter,
+    utils::scoped::Scoped,
     win32,
     win32::{
         icons,
@@ -227,6 +234,66 @@ pub fn uninstall_shortcut(_: &str, name: &str) -> Result<(), Box<dyn Error>> {
     std::fs::remove_file(link_path)?;
 
     Ok(())
+}
+
+unsafe fn open_run_key(mode: REG_SAM_FLAGS) -> Result<Scoped<HKEY, fn(&HKEY)>, Box<dyn Error>> {
+    let mut key: Scoped<HKEY, fn(&HKEY)> = Scoped::new(Default::default(), |key| {
+        RegCloseKey(*key);
+    });
+
+    RegOpenKeyExA(
+        HKEY_CURRENT_USER,
+        PCSTR(cstr!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run").as_ptr().cast()),
+        0,
+        mode,
+        &mut *key,
+    )
+    .ok()?;
+
+    Ok(key)
+}
+
+pub fn is_run_on_boot_existed(app_id: &str) -> bool {
+    unsafe {
+        let key: Scoped<HKEY, _> = if let Ok(key) = open_run_key(KEY_QUERY_VALUE) {
+            key
+        } else {
+            return false;
+        };
+
+        let app_id = if let Ok(id) = CString::new(app_id) {
+            id
+        } else {
+            return false;
+        };
+
+        let mut sub_key_type: REG_VALUE_TYPE = Default::default();
+        RegQueryValueExA(*key, PCSTR(app_id.as_ptr().cast()), None, Some(&mut sub_key_type), None, None).is_ok()
+    }
+}
+
+pub fn set_run_on_boot(app_id: &str, executable: &str, arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    unsafe {
+        let key: Scoped<HKEY, _> = open_run_key(KEY_SET_VALUE)?;
+
+        let app_id = CString::new(app_id)?;
+        let command_line = format!("\"{}\" {}", executable, join_arguments(arguments)).into_bytes();
+        RegSetValueExA(*key, PCSTR(app_id.as_ptr().cast()), 0, REG_SZ, Some(&command_line)).ok()?;
+
+        Ok(())
+    }
+}
+
+pub fn remove_run_on_boot(app_id: &str) -> Result<(), Box<dyn Error>> {
+    unsafe {
+        let key = open_run_key(KEY_SET_VALUE | KEY_QUERY_VALUE)?;
+
+        let app_id = CString::new(app_id)?;
+
+        RegDeleteValueA(*key, PCSTR(app_id.as_ptr().cast())).ok()?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

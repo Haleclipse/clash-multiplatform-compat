@@ -83,10 +83,10 @@ public final class ShellCompat {
     public static void installShortcut(@NotNull final String applicationId,
                                        @NotNull final String applicationName,
                                        @NotNull final String iconName,
-                                       @NotNull final String executablePath,
+                                       @NotNull final Path executablePath,
                                        @NotNull final String... arguments
     ) throws IOException {
-        nativeInstallShortcut(applicationId, applicationName, iconName, executablePath, arguments);
+        nativeInstallShortcut(applicationId, applicationName, iconName, executablePath.toAbsolutePath().toString(), arguments);
     }
 
     private static native void nativeUninstallShortcut(
@@ -96,6 +96,31 @@ public final class ShellCompat {
 
     public static void uninstallShortcut(@NotNull final String applicationId, @NotNull final String applicationName) throws IOException {
         nativeUninstallShortcut(applicationId, applicationName);
+    }
+
+    private static native boolean nativeIsRunOnBootExisted(@NotNull final String applicationId);
+
+    public static boolean isRunOnBootExisted(@NotNull final String applicationId) {
+        return nativeIsRunOnBootExisted(applicationId);
+    }
+
+    private static native void nativeSetRunOnBoot(
+            @NotNull final String applicationId,
+            @NotNull final String executablePath,
+            @NotNull final String @NotNull [] arguments
+    ) throws IOException;
+
+    public static void setRunOnBoot(
+            @NotNull final String applicationId,
+            @NotNull final Path executablePath,
+            @NotNull final String... arguments) throws IOException {
+        nativeSetRunOnBoot(applicationId, executablePath.toAbsolutePath().toString(), arguments);
+    }
+
+    private static native void nativeRemoveRunOnBoot(@NotNull final String applicationId) throws IOException;
+
+    public static void removeRunOnBoot(@NotNull final String applicationId) throws IOException {
+        nativeRemoveRunOnBoot(applicationId);
     }
 
     public record PickerFilter(@NotNull String name, @NotNull List<@NotNull String> extensions) {

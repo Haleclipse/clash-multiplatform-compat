@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use jni_sys::{jboolean, jbyteArray, jclass, jlong, jmethodID, jobjectArray, jstring, JNIEnv, JNI_TRUE};
+use jni_sys::{jboolean, jbyteArray, jclass, jlong, jmethodID, jobjectArray, jstring, JNIEnv, JNI_FALSE, JNI_TRUE};
 
 use crate::{
     common::shell::FileFilter,
@@ -22,7 +22,7 @@ pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeIsSupport
     return if crate::linux::shell::is_supported() {
         JNI_TRUE
     } else {
-        jni_sys::JNI_FALSE
+        JNI_FALSE
     };
 }
 
@@ -164,6 +164,71 @@ pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeUninstall
 
         #[cfg(target_os = "linux")]
         crate::linux::shell::uninstall_shortcut(&app_id, &app_name)?;
+
+        Ok(())
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeIsRunOnBootExisted(
+    env: *mut JNIEnv,
+    _: jclass,
+    app_id: jstring,
+) -> jboolean {
+    let app_id = java_string_to_string(env, app_id);
+
+    #[cfg(windows)]
+    let ret = crate::win32::shell::is_run_on_boot_existed(&app_id);
+
+    #[cfg(target_os = "linux")]
+    let ret = crate::linux::shell::is_run_on_boot_existed(&app_id);
+
+    if ret {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeSetRunOnBoot(
+    env: *mut JNIEnv,
+    _: jclass,
+    app_id: jstring,
+    executable_path: jstring,
+    arguments: jobjectArray,
+) {
+    rethrow_java_io_exception(env, || {
+        let app_id = java_string_to_string(env, app_id);
+        let executable_path = java_string_to_string(env, executable_path);
+        let arguments = iterate_object_array(env, arguments)
+            .map(|obj| java_string_to_string(env, obj))
+            .collect::<Vec<_>>();
+
+        #[cfg(windows)]
+        crate::win32::shell::set_run_on_boot(&app_id, &executable_path, &arguments)?;
+
+        #[cfg(target_os = "linux")]
+        crate::linux::shell::set_run_on_boot(&app_id, &executable_path, &arguments)?;
+
+        Ok(())
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeRemoveRunOnBoot(
+    env: *mut JNIEnv,
+    _: jclass,
+    app_id: jstring,
+) {
+    rethrow_java_io_exception(env, || {
+        let app_id = java_string_to_string(env, app_id);
+
+        #[cfg(windows)]
+        crate::win32::shell::remove_run_on_boot(&app_id)?;
+
+        #[cfg(target_os = "linux")]
+        crate::linux::shell::remove_run_on_boot(&app_id)?;
 
         Ok(())
     });

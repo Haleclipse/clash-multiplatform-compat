@@ -4,8 +4,8 @@ use std::{
     ffi::CString,
     fs,
     fs::OpenOptions,
-    io::{Cursor, Write},
-    path::{Path, PathBuf},
+    io::{Cursor, Read, Write},
+    path::PathBuf,
     process::{Command, Stdio},
 };
 
@@ -123,22 +123,24 @@ pub fn run_launch_file(window: i64, file: &str) -> Result<(), Box<dyn Error>> {
     })
 }
 
-fn refresh_desktop_database(home_dir: &Path) {
-    Command::new("xdg-desktop-menu")
-        .args(["forceupdate"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .ok();
+fn refresh_desktop_database() {
+    if let Some(home_dir) = home::home_dir() {
+        Command::new("xdg-desktop-menu")
+            .args(["forceupdate"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .ok();
 
-    Command::new("gtk-update-icon-cache")
-        .args(&["-t", home_dir.join(".local/share/icons/hicolor").to_str().unwrap()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .ok();
+        Command::new("gtk-update-icon-cache")
+            .args(&["-t", home_dir.join(".local/share/icons/hicolor").to_str().unwrap()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok();
+    }
 }
 
 pub fn install_icon(name: &str, data: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -167,9 +169,55 @@ pub fn install_icon(name: &str, data: &[u8]) -> Result<(), Box<dyn Error>> {
         image.write_png(png_file)?;
     }
 
-    refresh_desktop_database(&home_dir);
+    refresh_desktop_database();
 
     Ok(())
+}
+
+fn join_command_line(executable: &str, arguments: &[String]) -> String {
+    let mut ret = String::new();
+
+    ret.push('"');
+
+    for c in executable.chars() {
+        if c == '"' {
+            ret.push('\\');
+        }
+
+        ret.push(c);
+    }
+
+    ret.push('"');
+
+    for arg in arguments {
+        ret.push(' ');
+        ret.push('"');
+
+        for c in arg.chars() {
+            if c == '"' {
+                ret.push('\\');
+            }
+
+            ret.push(c)
+        }
+
+        ret.push('"');
+    }
+
+    ret
+}
+
+fn shortcut_desktop_path(app_id: &str) -> Result<PathBuf, Box<dyn Error>> {
+    let home_dir = if let Some(home_dir) = home::home_dir() {
+        home_dir
+    } else {
+        return Err("home directory not found".into());
+    };
+
+    Ok(home_dir
+        .join(".local/share/applications")
+        .join(app_id)
+        .with_extension("desktop"))
 }
 
 pub fn install_shortcut(
@@ -184,23 +232,14 @@ pub fn install_shortcut(
         "Name=".to_owned() + name,
         "Comment=".to_owned() + name,
         "StartupWMClass=".to_owned() + app_id,
-        "Exec=".to_owned() + executable + " " + &arguments.join(" "),
+        "Exec=".to_owned() + &join_command_line(executable, arguments),
         "Terminal=false".to_owned(),
         "Type=Application".to_owned(),
         "Icon=".to_owned() + icon,
     ]
     .join("\n");
 
-    let home_dir = if let Some(home_dir) = home::home_dir() {
-        home_dir
-    } else {
-        return Err("unable to find home directory".into());
-    };
-
-    let desktop_path = home_dir
-        .join(".local/share/applications")
-        .join(app_id)
-        .with_extension("desktop");
+    let desktop_path = shortcut_desktop_path(app_id)?;
 
     fs::create_dir_all(desktop_path.parent().unwrap())?;
 
@@ -212,26 +251,87 @@ pub fn install_shortcut(
 
     file.write_all(content.as_bytes())?;
 
-    refresh_desktop_database(&home_dir);
+    refresh_desktop_database();
 
     Ok(())
 }
 
 pub fn uninstall_shortcut(app_id: &str, _: &str) -> Result<(), Box<dyn Error>> {
-    let home_dir = if let Some(home_dir) = home::home_dir() {
-        home_dir
-    } else {
-        return Err("unable to find home directory".into());
-    };
-
-    let desktop_path = home_dir
-        .join(".local/share/applications")
-        .join(app_id)
-        .with_extension("desktop");
+    let desktop_path = shortcut_desktop_path(app_id)?;
 
     fs::remove_file(desktop_path)?;
 
-    refresh_desktop_database(&home_dir);
+    refresh_desktop_database();
+
+    Ok(())
+}
+
+fn autostart_desktop_path(app_id: &str) -> Result<PathBuf, Box<dyn Error>> {
+    let home_dir = if let Some(home) = home::home_dir() {
+        home
+    } else {
+        return Err("home dir not found".into());
+    };
+
+    Ok(home_dir.join(".config/autostart").join(app_id).with_extension("desktop"))
+}
+
+pub fn is_run_on_boot_existed(app_id: &str) -> bool {
+    if let Ok(path) = autostart_desktop_path(app_id) {
+        path.exists()
+    } else {
+        false
+    }
+}
+
+pub fn set_run_on_boot(app_id: &str, executable: &str, arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    let autostart_path = autostart_desktop_path(app_id)?;
+    let shortcut_path = shortcut_desktop_path(app_id)?;
+
+    if shortcut_path.exists() {
+        if let Ok(mut file) = fs::File::open(shortcut_path) {
+            let mut template = String::new();
+
+            if let Ok(_) = file.read_to_string(&mut template) {
+                let content = template
+                    .lines()
+                    .map(|line| {
+                        if line.starts_with("Exec=") {
+                            "Exec=".to_owned() + &join_command_line(executable, arguments)
+                        } else {
+                            line.to_owned()
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+
+                let mut write_file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(autostart_path)?;
+
+                write_file.write(content.as_bytes())?;
+
+                return Ok(());
+            }
+        }
+    }
+
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(autostart_path)?
+        .write(format!("[Desktop Entry]\nExec={}\n", join_command_line(executable, arguments)).as_bytes())?;
+
+    Ok(())
+}
+
+pub fn remove_run_on_boot(app_id: &str) -> Result<(), Box<dyn Error>> {
+    let path = autostart_desktop_path(app_id)?;
+
+    fs::remove_file(path)?;
 
     Ok(())
 }

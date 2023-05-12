@@ -3,16 +3,16 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub struct Scoped<T, C: FnMut(&T)> {
+pub struct Scoped<T, C: FnOnce(&T) = fn(&T)> {
     pub value: T,
-    closer: Box<C>,
+    closer: Option<C>,
 }
 
-impl<T, C: FnMut(&T)> Scoped<T, C> {
+impl<T, C: FnOnce(&T)> Scoped<T, C> {
     pub fn new(initial: T, closer: C) -> Self {
         Scoped {
             value: initial,
-            closer: Box::new(closer),
+            closer: Some(closer),
         }
     }
 
@@ -21,7 +21,7 @@ impl<T, C: FnMut(&T)> Scoped<T, C> {
     }
 }
 
-impl<T, C: FnMut(&T)> Deref for Scoped<T, C> {
+impl<T, C: FnOnce(&T)> Deref for Scoped<T, C> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -29,15 +29,17 @@ impl<T, C: FnMut(&T)> Deref for Scoped<T, C> {
     }
 }
 
-impl<T, C: FnMut(&T)> DerefMut for Scoped<T, C> {
+impl<T, C: FnOnce(&T)> DerefMut for Scoped<T, C> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
 }
 
-impl<T, C: FnMut(&T)> Drop for Scoped<T, C> {
+impl<T, C: FnOnce(&T)> Drop for Scoped<T, C> {
     fn drop(&mut self) {
-        (self.closer)(&self.value);
+        if let Some(closer) = mem::replace(&mut self.closer, None) {
+            closer(&self.value)
+        }
     }
 }
 

@@ -66,4 +66,18 @@ public class ShellTest {
             }
         }));
     }
+
+    @Test
+    public void setRemoveAutoStartEntry() throws Exception {
+        ShellCompat.setRunOnBoot(
+                "clash-multiplatform-compat-library",
+                Path.of(System.getProperty("java.home")).resolve("bin").resolve("java")
+        );
+
+        Assertions.assertTrue(ShellCompat.isRunOnBootExisted("clash-multiplatform-compat-library"));
+
+        ShellCompat.removeRunOnBoot("clash-multiplatform-compat-library");
+
+        Assertions.assertFalse(ShellCompat.isRunOnBootExisted("clash-multiplatform-compat-library"));
+    }
 }

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.Objects;
 
 public class NotificationTest {
@@ -35,7 +36,7 @@ public class NotificationTest {
                 "clash-multiplatform-compat-library",
                 "Clash Multiplatform Compat (JVM)",
                 "clash-multiplatform",
-                System.getProperty("java.home") + "/bin/jshell"
+                Path.of(System.getProperty("java.home") + "/bin/jshell")
         );
 
         NotificationCompat.sendNotification(
