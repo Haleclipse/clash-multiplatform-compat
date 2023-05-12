@@ -183,6 +183,7 @@ pub fn install_shortcut(
         "[Desktop Entry]".to_owned(),
         "Name=".to_owned() + name,
         "Comment=".to_owned() + name,
+        "StartupWMClass=".to_owned() + app_id,
         "Exec=".to_owned() + executable + " " + &arguments.join(" "),
         "Terminal=false".to_owned(),
         "Type=Application".to_owned(),
