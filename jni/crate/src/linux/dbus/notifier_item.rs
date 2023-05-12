@@ -65,7 +65,7 @@ impl<L: Listener> NotifierItem<L> {
 
     #[dbus_interface(property)]
     async fn attention_icon_name(&self) -> String {
-        self.data.lock().unwrap().icon.to_owned()
+        "".to_owned()
     }
 
     #[dbus_interface(property)]
@@ -119,7 +119,7 @@ impl<L: Listener> NotifierItem<L> {
 
     #[dbus_interface(property)]
     async fn overlay_icon_name(&self) -> String {
-        self.data.lock().unwrap().icon.to_owned()
+        "".to_owned()
     }
 
     #[dbus_interface(property)]
