@@ -6,6 +6,7 @@ use crate::helper::vm::install_java_vm;
 
 mod app;
 mod file;
+mod network;
 mod notification;
 mod notifier;
 mod process;

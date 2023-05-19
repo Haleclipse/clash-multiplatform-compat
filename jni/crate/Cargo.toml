@@ -60,6 +60,7 @@ features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Controls_Dialogs",
+    "Win32_Networking_WinInet",
     "Foundation",
     "Foundation_Collections",
     "Data_Xml_Dom",
