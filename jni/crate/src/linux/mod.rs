@@ -3,6 +3,7 @@ pub mod network;
 pub mod notification;
 pub mod notifier;
 pub mod process;
+pub mod security;
 pub mod shell;
 pub mod theme;
 pub mod window;

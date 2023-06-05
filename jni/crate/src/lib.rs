@@ -10,6 +10,7 @@ mod network;
 mod notification;
 mod notifier;
 mod process;
+mod security;
 mod shell;
 mod theme;
 mod window;
