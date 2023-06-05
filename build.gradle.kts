@@ -1,11 +1,5 @@
 val releaseTag = System.getenv("TAG")?.trim()?.takeIf(String::isNotEmpty) ?: "latest"
 
-plugins {
-    kotlin("multiplatform") version "1.8.10" apply false
-    kotlin("jvm") version "1.8.10" apply false
-    kotlin("plugin.serialization") version "1.8.10" apply false
-}
-
 subprojects {
     group = "com.github.kr328.clash.compat"
     version = releaseTag

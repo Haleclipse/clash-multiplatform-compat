@@ -11,8 +11,8 @@ dependencies {
         testImplementation(project(":jni", configuration = "linux-amd64-debug"))
     }
 
-    implementation("org.jetbrains:annotations:24.0.0")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
+    implementation("org.jetbrains:annotations:24.0.1")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.9.3")
 }
 
 java {
