@@ -6,7 +6,7 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, SetHandleInformation, FALSE, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE},
         Networking::WinSock::{
-            accept, bind, connect, listen, WSASocketA, ADDRESS_FAMILY, AF_UNIX, INVALID_SOCKET, SOCKADDR_UN, SOCKET, SOCK_STREAM,
+            accept, bind, connect, listen, WSASocketW, ADDRESS_FAMILY, AF_UNIX, INVALID_SOCKET, SOCKADDR_UN, SOCKET, SOCK_STREAM,
             WSA_FLAG_OVERLAPPED,
         },
         System::Pipes::CreatePipe,
@@ -38,9 +38,9 @@ pub fn create_socket_pair() -> Result<(FileDescriptor, FileDescriptor), Box<dyn 
     let mut second = Scoped::new(INVALID_SOCKET, |s| close_socket(*s));
 
     unsafe {
-        let server = WSASocketA(AF_UNIX as i32, SOCK_STREAM.0, 0, None, 0, WSA_FLAG_OVERLAPPED);
+        let server = WSASocketW(AF_UNIX as i32, SOCK_STREAM.0, 0, None, 0, WSA_FLAG_OVERLAPPED);
         if server == INVALID_SOCKET {
-            return Err(Error::with_current("WSASocketA").into());
+            return Err(Error::with_current("WSASocketW").into());
         }
 
         let server = Scoped::new(server, |s| close_socket(*s));
@@ -65,9 +65,9 @@ pub fn create_socket_pair() -> Result<(FileDescriptor, FileDescriptor), Box<dyn 
             return Err(Error::with_current("listen").into());
         }
 
-        *first = WSASocketA(AF_UNIX as i32, SOCK_STREAM.0, 0, None, 0, WSA_FLAG_OVERLAPPED);
+        *first = WSASocketW(AF_UNIX as i32, SOCK_STREAM.0, 0, None, 0, WSA_FLAG_OVERLAPPED);
         if *first == INVALID_SOCKET {
-            return Err(Error::with_current("WSASocketA").into());
+            return Err(Error::with_current("WSASocketW").into());
         }
 
         if connect(*first, (&addr as *const SOCKADDR_UN).cast(), size_of::<SOCKADDR_UN>() as i32) < 0 {

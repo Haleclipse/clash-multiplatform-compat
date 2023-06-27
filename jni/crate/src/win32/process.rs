@@ -1,19 +1,19 @@
-use std::{collections::HashSet, ffi::CString, mem::size_of, ptr::null_mut};
+use std::{collections::HashSet, mem::size_of, ptr::null_mut};
 
-use cstr::cstr;
 use windows::{
-    core::{PCSTR, PSTR},
+    core::{PCWSTR, PWSTR},
     imp::{CloseHandle, WaitForSingleObject},
+    w,
     Win32::{
         Foundation::{
             GetLastError, ERROR_INSUFFICIENT_BUFFER, FALSE, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
             STATUS_PENDING, TRUE,
         },
-        Storage::FileSystem::{CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING},
+        Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING},
         System::Threading::{
-            CreateProcessA, GetExitCodeProcess, InitializeProcThreadAttributeList, TerminateProcess, UpdateProcThreadAttribute,
-            CREATE_NO_WINDOW, EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOA, STARTUPINFOEXA,
+            CreateProcessW, GetExitCodeProcess, InitializeProcThreadAttributeList, TerminateProcess, UpdateProcThreadAttribute,
+            CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST,
+            PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
         },
         UI::WindowsAndMessaging::SW_HIDE,
     },
@@ -22,7 +22,11 @@ use windows::{
 use crate::{
     common::file::FileDescriptor,
     utils::scoped::Scoped,
-    win32::{error::Error, file::set_file_descriptor_inheritable, strings::join_arguments},
+    win32::{
+        error::Error,
+        file::set_file_descriptor_inheritable,
+        strings::{join_arguments, Win32StringIntoExt},
+    },
 };
 
 fn close_handle(h: HANDLE) {
@@ -42,8 +46,8 @@ pub fn create_process(
     stderr: Option<FileDescriptor>,
 ) -> Result<FileDescriptor, Box<dyn std::error::Error>> {
     unsafe {
-        let nul_file = CreateFileA(
-            PCSTR(cstr!("nul:").as_ptr().cast()),
+        let nul_file = CreateFileW(
+            w!("nul:"),
             (GENERIC_READ | GENERIC_WRITE).0,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             None,
@@ -55,16 +59,15 @@ pub fn create_process(
 
         set_file_descriptor_inheritable(nul_file.0 as FileDescriptor, true)?;
 
-        let executable = CString::new(executable)?;
-        let mut joined_arguments = join_arguments(arguments).into_bytes();
-        joined_arguments.push(0);
-        let working_dir = CString::new(working_dir)?;
-        let mut joined_environments = Vec::<u8>::new();
+        let executable = executable.to_win32_utf16();
+        let mut joined_arguments = join_arguments(arguments).to_win32_utf16();
+        let working_dir = working_dir.to_win32_utf16();
+        let mut joined_environments = Vec::<u16>::new();
         for env in environments {
-            joined_environments.extend_from_slice(env.as_bytes());
-            joined_environments.push(b'\0');
+            joined_environments.extend(env.encode_utf16());
+            joined_environments.push(0);
         }
-        joined_environments.push(b'\0');
+        joined_environments.push(0);
 
         let stdin = stdin.map(|v| HANDLE(v as isize)).unwrap_or(*nul_file);
         let stdout = stdout.map(|v| HANDLE(v as isize)).unwrap_or(*nul_file);
@@ -116,8 +119,8 @@ pub fn create_process(
             return Err(Error::with_current("UpdateProcThreadAttribute").into());
         }
 
-        let mut startup_info = STARTUPINFOEXA::default();
-        startup_info.StartupInfo.cb = size_of::<STARTUPINFOEXA>() as u32;
+        let mut startup_info = STARTUPINFOEXW::default();
+        startup_info.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
         startup_info.StartupInfo.hStdInput = stdin;
         startup_info.StartupInfo.hStdOutput = stdout;
         startup_info.StartupInfo.hStdError = stderr;
@@ -126,20 +129,20 @@ pub fn create_process(
         startup_info.lpAttributeList = LPPROC_THREAD_ATTRIBUTE_LIST(attributes.as_mut_ptr().cast());
 
         let mut process_info = PROCESS_INFORMATION::default();
-        if CreateProcessA(
-            PCSTR(executable.as_ptr().cast()),
-            PSTR(joined_arguments.as_mut_ptr()),
+        if CreateProcessW(
+            PCWSTR::from_raw(executable.as_ptr()),
+            PWSTR::from_raw(joined_arguments.as_mut_ptr()),
             None,
             None,
             TRUE,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
             Some(joined_environments.as_ptr().cast()),
-            PCSTR(working_dir.as_ptr().cast()),
-            &startup_info.StartupInfo as *const STARTUPINFOA,
+            PCWSTR::from_raw(working_dir.as_ptr()),
+            &startup_info.StartupInfo as *const STARTUPINFOW,
             &mut process_info as *mut PROCESS_INFORMATION,
         ) == FALSE
         {
-            return Err(Error::with_current("CreateProcessA").into());
+            return Err(Error::with_current("CreateProcessW").into());
         }
 
         close_handle(process_info.hThread);

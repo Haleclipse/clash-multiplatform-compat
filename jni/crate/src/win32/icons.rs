@@ -1,14 +1,17 @@
 use std::{
-    ffi::CString,
     fs,
     path::{Path, PathBuf},
 };
 
+use crate::win32::{error::Error, strings::Win32StringIntoExt};
 use windows::{
-    core::PCSTR,
-    Win32::UI::{
-        Shell::*,
-        WindowsAndMessaging::{GetSystemMetrics, LoadImageA, HICON, IMAGE_ICON, LR_LOADFROMFILE, SM_CXICON, SM_CYICON},
+    core::PCWSTR,
+    Win32::{
+        Foundation::WIN32_ERROR,
+        UI::{
+            Shell::*,
+            WindowsAndMessaging::{GetSystemMetrics, LoadImageW, HICON, IMAGE_ICON, LR_LOADFROMFILE, SM_CXICON, SM_CYICON},
+        },
     },
 };
 
@@ -20,16 +23,17 @@ pub fn get_icons_path(name: &str) -> Result<PathBuf, Box<dyn std::error::Error>>
 
 pub fn load_icon(name: &str) -> Result<HICON, Box<dyn std::error::Error>> {
     let icon = unsafe {
-        let icon_path = CString::new(get_icons_path(name)?.to_str().unwrap())?;
+        let name_utf16 = get_icons_path(name)?.to_str().unwrap().to_win32_utf16();
 
-        LoadImageA(
+        LoadImageW(
             None,
-            PCSTR(icon_path.as_ptr().cast()),
+            PCWSTR::from_raw(name_utf16.as_ptr()),
             IMAGE_ICON,
             GetSystemMetrics(SM_CXICON),
             GetSystemMetrics(SM_CYICON),
             LR_LOADFROMFILE,
-        )?
+        )
+        .map_err(|e| Error::new("LoadImageW", WIN32_ERROR(e.code().0 as u32)))?
     };
 
     Ok(HICON(icon.0))

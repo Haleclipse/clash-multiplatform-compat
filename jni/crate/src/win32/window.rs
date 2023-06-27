@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use cstr::cstr;
 use windows::Win32::{
     Foundation::{BOOL, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM},
     Graphics::Dwm::DwmExtendFrameIntoClientArea,
@@ -13,8 +12,8 @@ use windows::Win32::{
         Controls::MARGINS,
         HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
         WindowsAndMessaging::{
-            CallWindowProcA, DefWindowProcA, EnumChildWindows, GetSystemMenu, GetWindowLongPtrA, GetWindowRect, IsZoomed,
-            SendMessageA, SetWindowLongA, SetWindowLongPtrA, SetWindowPos, TrackPopupMenu, GWLP_WNDPROC, GWL_STYLE, HTBOTTOM,
+            CallWindowProcW, DefWindowProcW, EnumChildWindows, GetSystemMenu, GetWindowLongPtrW, GetWindowRect, IsZoomed,
+            SendMessageW, SetWindowLongPtrW, SetWindowLongW, SetWindowPos, TrackPopupMenu, GWLP_WNDPROC, GWL_STYLE, HTBOTTOM,
             HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT,
             NCCALCSIZE_PARAMS, SM_CXPADDEDBORDER, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_COMMAND, WM_DESTROY,
             WM_MOVE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_SIZE, WM_SYSCOMMAND, WS_THICKFRAME,
@@ -99,8 +98,8 @@ impl WindowHints for Hints {
     }
 }
 
-static PROP_COMPAT_CONTEXT: WindowProp<'static, Arc<Mutex<Context>>> = WindowProp::new(cstr!("compat-context"));
-static PROP_AWT_PROCEDURE: WindowProp<'static, WindowProcedureFunc> = WindowProp::new(cstr!("awt-procedure"));
+static PROP_COMPAT_CONTEXT: WindowProp<'static, Arc<Mutex<Context>>> = WindowProp::new("compat-context");
+static PROP_AWT_PROCEDURE: WindowProp<'static, WindowProcedureFunc> = WindowProp::new("awt-procedure");
 
 unsafe fn get_caption_padding(handle: HWND) -> i32 {
     if IsZoomed(handle) == TRUE {
@@ -114,13 +113,13 @@ unsafe extern "system" fn delegated_window_procedure(window: HWND, message: u32,
     let awt_procedure = if let Some(awt_procedure) = PROP_AWT_PROCEDURE.get(window) {
         awt_procedure
     } else {
-        return DefWindowProcA(window, message, w_param, l_param);
+        return DefWindowProcW(window, message, w_param, l_param);
     };
 
     let context = if let Some(context) = PROP_COMPAT_CONTEXT.get(window) {
         context
     } else {
-        return CallWindowProcA(Some(awt_procedure), window, message, w_param, l_param);
+        return CallWindowProcW(Some(awt_procedure), window, message, w_param, l_param);
     };
 
     match message {
@@ -181,18 +180,18 @@ unsafe extern "system" fn delegated_window_procedure(window: HWND, message: u32,
         }
         WM_COMMAND => {
             if (w_param.0 & 0xf000) != 0 {
-                return SendMessageA(window, WM_SYSCOMMAND, w_param, l_param);
+                return SendMessageW(window, WM_SYSCOMMAND, w_param, l_param);
             }
         }
         WM_SYSCOMMAND => {
             let root = context.lock().unwrap().root;
 
-            return DefWindowProcA(root, message, w_param, l_param);
+            return DefWindowProcW(root, message, w_param, l_param);
         }
         _ => (),
     }
 
-    CallWindowProcA(Some(awt_procedure), window, message, w_param, l_param)
+    CallWindowProcW(Some(awt_procedure), window, message, w_param, l_param)
 }
 
 pub unsafe extern "system" fn attach_to_window(window: HWND, l_param: LPARAM) -> BOOL {
@@ -203,11 +202,11 @@ pub unsafe extern "system" fn attach_to_window(window: HWND, l_param: LPARAM) ->
     let holder = &*((l_param.0 as *mut c_void) as *const Arc<Mutex<Context>>);
     PROP_COMPAT_CONTEXT.set(window, Some(holder.clone()));
 
-    let awt_procedure = GetWindowLongPtrA(window, GWLP_WNDPROC);
+    let awt_procedure = GetWindowLongPtrW(window, GWLP_WNDPROC);
     PROP_AWT_PROCEDURE.set(window, Some(mem::transmute(awt_procedure)));
 
     let delegated_window_procedure = (delegated_window_procedure as *const c_void) as isize;
-    SetWindowLongPtrA(window, GWLP_WNDPROC, delegated_window_procedure);
+    SetWindowLongPtrW(window, GWLP_WNDPROC, delegated_window_procedure);
 
     EnumChildWindows(window, Some(attach_to_window), l_param);
 
@@ -228,7 +227,7 @@ pub fn set_borderless(window: i64) -> Result<Box<dyn WindowHints>, Box<dyn std::
     unsafe {
         let window = HWND(window as isize);
 
-        SetWindowLongA(window, GWL_STYLE, WS_THICKFRAME.0 as i32);
+        SetWindowLongW(window, GWL_STYLE, WS_THICKFRAME.0 as i32);
 
         let margin = MARGINS {
             cxLeftWidth: 0,

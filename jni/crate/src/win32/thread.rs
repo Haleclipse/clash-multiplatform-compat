@@ -9,7 +9,7 @@ use windows::Win32::{
     UI::{
         HiDpi::{SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE},
         WindowsAndMessaging::{
-            DispatchMessageA, GetMessageA, PeekMessageA, PostThreadMessageA, TranslateMessage, MSG, PM_NOREMOVE, WM_USER,
+            DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG, PM_NOREMOVE, WM_USER,
         },
     },
 };
@@ -22,10 +22,10 @@ unsafe extern "system" fn main_thread_routine(arg: *mut c_void) -> u32 {
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
 
     let mut msg = MSG::default();
-    PeekMessageA(&mut msg, None, 0, 0, PM_NOREMOVE);
+    PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
     drop(lock);
 
-    while GetMessageA(&mut msg, None, 0, 0) != FALSE {
+    while GetMessageW(&mut msg, None, 0, 0) != FALSE {
         match msg.message {
             WM_USER_RUN_FUNC => {
                 Box::from_raw(msg.lParam.0 as *mut Box<dyn FnOnce()>)();
@@ -36,7 +36,7 @@ unsafe extern "system" fn main_thread_routine(arg: *mut c_void) -> u32 {
         }
 
         TranslateMessage(&msg);
-        DispatchMessageA(&msg);
+        DispatchMessageW(&msg);
     }
 
     0
@@ -75,7 +75,7 @@ pub fn run_on_main_thread<R: Send, F: (FnOnce() -> R) + Send>(f: F) -> R {
     let runnable: Box<dyn FnOnce()> = Box::new(move || *runnable_lock = Some(f()));
 
     unsafe {
-        PostThreadMessageA(
+        PostThreadMessageW(
             MAIN_THREAD_THREAD_ID,
             WM_USER_RUN_FUNC,
             WPARAM::default(),

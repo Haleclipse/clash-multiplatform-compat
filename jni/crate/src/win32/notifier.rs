@@ -1,23 +1,22 @@
 use std::{
-    ffi::{CStr, CString},
     mem::size_of,
     panic,
     sync::{Arc, Mutex, Once},
 };
 
-use cstr::cstr;
 use windows::{
-    core::PCSTR,
+    core::PCWSTR,
+    w,
     Win32::{
         Foundation::{ERROR_BUFFER_OVERFLOW, FALSE, HWND, LPARAM, LRESULT, WIN32_ERROR, WPARAM},
-        System::LibraryLoader::GetModuleHandleA,
+        System::LibraryLoader::GetModuleHandleW,
         UI::{
             Shell::*,
             WindowsAndMessaging::{
-                AppendMenuA, CreateMenu, CreatePopupMenu, CreateWindowExA, DefWindowProcA, DestroyIcon, DestroyMenu,
-                DestroyWindow, GetSystemMetrics, RegisterClassA, SetForegroundWindow, TrackPopupMenuEx, HICON, HMENU, MF_POPUP,
+                AppendMenuW, CreateMenu, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
+                DestroyWindow, GetSystemMetrics, RegisterClassW, SetForegroundWindow, TrackPopupMenuEx, HICON, HMENU, MF_POPUP,
                 MF_STRING, SM_MENUDROPALIGNMENT, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTALIGN, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
-                WM_APP, WM_CONTEXTMENU, WM_DESTROY, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+                WM_APP, WM_CONTEXTMENU, WM_DESTROY, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -25,7 +24,7 @@ use windows::{
 
 use crate::{
     common::notifier::{Listener, MenuItem, Notifier},
-    win32::{error::Error, icons::load_icon, prop::WindowProp, thread},
+    win32::{error::Error, icons::load_icon, prop::WindowProp, strings::Win32StringIntoExt, thread},
 };
 
 #[derive(Default)]
@@ -34,26 +33,32 @@ pub struct NotifierContext {
     icon: HICON,
 }
 
-static PROP_MENU: WindowProp<'static, HMENU> = WindowProp::new(cstr!("menu"));
+static PROP_MENU: WindowProp<'static, HMENU> = WindowProp::new("menu");
 
 impl NotifierContext {
     unsafe fn insert_menu(menu: HMENU, layout: &[MenuItem]) -> Result<(), Box<dyn std::error::Error>> {
         for item in layout {
             match item {
                 MenuItem::Item { title, id } => {
-                    let title = CString::new(&title[..])?;
-                    if AppendMenuA(menu, MF_STRING, *id as usize, PCSTR(title.as_ptr().cast())) == FALSE {
-                        return Err(Error::with_current("AppendMenuA").into());
+                    let title = title.to_win32_utf16();
+                    if AppendMenuW(menu, MF_STRING, *id as usize, PCWSTR::from_raw(title.as_ptr())) == FALSE {
+                        return Err(Error::with_current("AppendMenuW").into());
                     }
                 }
                 MenuItem::SubMenu { title, items } => {
                     let sub_menu = CreateMenu()?;
 
-                    let title = CString::new(&title[..])?;
-                    if AppendMenuA(menu, MF_STRING | MF_POPUP, sub_menu.0 as usize, PCSTR(title.as_ptr().cast())) == FALSE {
+                    let title = title.to_win32_utf16();
+                    if AppendMenuW(
+                        menu,
+                        MF_STRING | MF_POPUP,
+                        sub_menu.0 as usize,
+                        PCWSTR::from_raw(title.as_ptr()),
+                    ) == FALSE
+                    {
                         DestroyMenu(sub_menu);
 
-                        return Err(Error::with_current("AppendMenuA").into());
+                        return Err(Error::with_current("AppendMenuW").into());
                     }
 
                     NotifierContext::insert_menu(sub_menu, items)?;
@@ -98,13 +103,13 @@ impl Notifier for NotifierContext {
 impl Drop for NotifierContext {
     fn drop(&mut self) {
         unsafe {
-            let mut notify_data = NOTIFYICONDATAA::default();
-            notify_data.cbSize = size_of::<NOTIFYICONDATAA>() as u32;
+            let mut notify_data = NOTIFYICONDATAW::default();
+            notify_data.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
             notify_data.hWnd = self.window;
             notify_data.uFlags = NOTIFY_ICON_DATA_FLAGS::default();
             notify_data.uID = self.window.0 as u32;
 
-            Shell_NotifyIconA(NIM_DELETE, &notify_data);
+            Shell_NotifyIconW(NIM_DELETE, &notify_data);
 
             DestroyWindow(self.window);
             DestroyIcon(self.icon);
@@ -112,13 +117,13 @@ impl Drop for NotifierContext {
     }
 }
 
-static PROP_LISTENER: WindowProp<'static, Arc<Mutex<dyn Listener>>> = WindowProp::new(cstr!("listener"));
+static PROP_LISTENER: WindowProp<'static, Arc<Mutex<dyn Listener>>> = WindowProp::new("listener");
 
 unsafe extern "system" fn menu_window_procedure(window: HWND, message: u32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let listener = if let Some(callback) = PROP_LISTENER.get(window) {
         callback
     } else {
-        return DefWindowProcA(window, message, w_param, l_param);
+        return DefWindowProcW(window, message, w_param, l_param);
     };
 
     match message {
@@ -161,21 +166,26 @@ unsafe extern "system" fn menu_window_procedure(window: HWND, message: u32, w_pa
         _ => (),
     }
 
-    DefWindowProcA(window, message, w_param, l_param)
+    DefWindowProcW(window, message, w_param, l_param)
 }
 
-static CLASS_NAME_NOTIFIER: &'static CStr = cstr!("compat-notifier-window");
+macro_rules! class_name_notifier {
+    () => {
+        w!("compat-notifier-window")
+    };
+}
+
 static ONCE_REGISTER_CLASS: Once = Once::new();
 
 fn register_class() {
     unsafe {
-        let mut class = WNDCLASSA::default();
+        let mut class = WNDCLASSW::default();
         class.lpfnWndProc = Some(menu_window_procedure);
-        class.hInstance = GetModuleHandleA(None).expect("unable to get module name");
-        class.lpszClassName = PCSTR(CLASS_NAME_NOTIFIER.as_ptr().cast());
+        class.hInstance = GetModuleHandleW(None).expect("unable to get module name");
+        class.lpszClassName = class_name_notifier!();
 
-        if RegisterClassA(&class as *const WNDCLASSA) == 0 {
-            panic!("{}", Error::with_current("RegisterClassA"));
+        if RegisterClassW(&class as *const WNDCLASSW) == 0 {
+            panic!("{}", Error::with_current("RegisterClassW"));
         }
     }
 }
@@ -193,16 +203,16 @@ pub fn add_notifier(
         let mut notifier = NotifierContext::default();
 
         notifier.window = thread::run_on_main_thread(|| -> Result<HWND, Error> {
-            let current_module = match GetModuleHandleA(None) {
+            let current_module = match GetModuleHandleW(None) {
                 Ok(module) => module,
                 Err(err) => {
-                    return Err(Error::new("GetModuleHandleA", WIN32_ERROR(err.code().0 as u32)));
+                    return Err(Error::new("GetModuleHandleW", WIN32_ERROR(err.code().0 as u32)));
                 }
             };
 
-            let window = CreateWindowExA(
+            let window = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
-                PCSTR(CLASS_NAME_NOTIFIER.as_ptr().cast()),
+                class_name_notifier!(),
                 None,
                 WS_OVERLAPPEDWINDOW,
                 0,
@@ -215,7 +225,7 @@ pub fn add_notifier(
                 None,
             );
             if window == HWND::default() {
-                return Err(Error::with_current("CreateWindowExA"));
+                return Err(Error::with_current("CreateWindowExW"));
             }
 
             Ok(window)
@@ -225,27 +235,26 @@ pub fn add_notifier(
 
         notifier.icon = load_icon(icon)?;
 
-        let tips = CString::new(title)?;
-        let tips = tips.as_bytes();
+        let tips = title.to_win32_utf16();
         if tips.len() > 128 {
-            return Err(Error::new("NOTIFYICONDATAA", ERROR_BUFFER_OVERFLOW).into());
+            return Err(Error::new("NOTIFYICONDATAW", ERROR_BUFFER_OVERFLOW).into());
         }
 
-        let mut notify_data = NOTIFYICONDATAA::default();
-        notify_data.cbSize = size_of::<NOTIFYICONDATAA>() as u32;
+        let mut notify_data = NOTIFYICONDATAW::default();
+        notify_data.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
         notify_data.hWnd = notifier.window;
         notify_data.hIcon = notifier.icon;
         notify_data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
         notify_data.uID = notifier.window.0 as u32;
         notify_data.uCallbackMessage = WM_APP;
-        notify_data.szTip[..tips.len()].copy_from_slice(tips);
-        if Shell_NotifyIconA(NIM_ADD, &notify_data) == FALSE {
-            return Err(Error::with_current("Shell_NotifyIconA").into());
+        notify_data.szTip[..tips.len()].copy_from_slice(&tips);
+        if Shell_NotifyIconW(NIM_ADD, &notify_data) == FALSE {
+            return Err(Error::with_current("Shell_NotifyIconW").into());
         }
 
         notify_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-        if Shell_NotifyIconA(NIM_SETVERSION, &notify_data) == FALSE {
-            return Err(Error::with_current("Shell_NotifyIconA").into());
+        if Shell_NotifyIconW(NIM_SETVERSION, &notify_data) == FALSE {
+            return Err(Error::with_current("Shell_NotifyIconW").into());
         }
 
         Ok(Box::new(notifier))
