@@ -41,6 +41,22 @@ static M_PICKER_FILTER_EXTENSIONS: LazyJRef<jmethodID> = LazyJRef::new(|| {
     ))
 });
 
+fn java_filters_to_filters(env: *mut JNIEnv, filters: jobjectArray) -> Vec<FileFilter> {
+    iterate_object_array(env, filters)
+        .map(|filter| {
+            let name = jcall!(env, CallObjectMethod, filter, *M_PICKER_FILTER_NAME.get()) as jstring;
+            let extensions = jcall!(env, CallObjectMethod, filter, *M_PICKER_FILTER_EXTENSIONS.get()) as jobjectArray;
+
+            let name = java_string_to_string(env, name);
+            let extensions = iterate_object_array(env, extensions)
+                .map(|ext| java_string_to_string(env, ext))
+                .collect::<Vec<String>>();
+
+            FileFilter { label: name, extensions }
+        })
+        .collect::<_>()
+}
+
 #[no_mangle]
 pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeRunPickFile(
     env: *mut JNIEnv,
@@ -50,25 +66,49 @@ pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeRunPickFi
     filters: jobjectArray,
 ) -> jstring {
     rethrow_java_io_exception(env, || {
-        let filters: Vec<FileFilter> = iterate_object_array(env, filters)
-            .map(|filter| {
-                let name = jcall!(env, CallObjectMethod, filter, *M_PICKER_FILTER_NAME.get()) as jstring;
-                let extensions = jcall!(env, CallObjectMethod, filter, *M_PICKER_FILTER_EXTENSIONS.get()) as jobjectArray;
-
-                let name = java_string_to_string(env, name);
-                let extensions = iterate_object_array(env, extensions)
-                    .map(|ext| java_string_to_string(env, ext))
-                    .collect::<Vec<String>>();
-
-                FileFilter { label: name, extensions }
-            })
-            .collect::<_>();
+        let filters: Vec<FileFilter> = java_filters_to_filters(env, filters);
 
         #[cfg(windows)]
         let result = crate::win32::shell::run_pick_file(window, &java_string_to_string(env, title), &filters)?;
 
         #[cfg(target_os = "linux")]
         let result = crate::linux::shell::run_pick_file(window, &java_string_to_string(env, title), &filters)?;
+
+        Ok(match result {
+            None => null_mut(),
+            Some(path) => string_to_java_string(env, path.to_str().unwrap()),
+        })
+    })
+    .unwrap_or(null_mut())
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_github_kr328_clash_compat_ShellCompat_nativeRunSaveFile(
+    env: *mut JNIEnv,
+    _: jclass,
+    window_handle: jlong,
+    file_name: jstring,
+    title: jstring,
+    filters: jobjectArray,
+) -> jstring {
+    rethrow_java_io_exception(env, || {
+        let filters: Vec<FileFilter> = java_filters_to_filters(env, filters);
+
+        #[cfg(windows)]
+        let result = crate::win32::shell::run_save_file(
+            window_handle,
+            &java_string_to_string(env, file_name),
+            &java_string_to_string(env, title),
+            &filters,
+        )?;
+
+        #[cfg(target_os = "linux")]
+        let result = crate::linux::shell::run_save_file(
+            window_handle,
+            &java_string_to_string(env, file_name),
+            &java_string_to_string(env, title),
+            &filters,
+        )?;
 
         Ok(match result {
             None => null_mut(),

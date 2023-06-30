@@ -5,12 +5,12 @@ use std::{
     fs,
     fs::OpenOptions,
     io::{Cursor, Read, Write},
+    ops::Deref,
     path::PathBuf,
     process::{Command, Stdio},
 };
 
 use futures::executor::block_on;
-
 use libc::{open, O_RDWR};
 use zbus::{
     export::ordered_stream::OrderedStreamExt,
@@ -56,51 +56,93 @@ pub fn is_supported() -> bool {
     }
 }
 
-pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result<Option<PathBuf>, Box<dyn Error>> {
-    block_on(async {
-        let conn = Connection::session().await?;
+enum FileChooserAction<'a> {
+    OpenFile(&'a [FileFilter]),
+    SaveFile(&'a [FileFilter], &'a str),
+}
 
-        let filters = filters
+async fn call_file_chooser<'a>(action: FileChooserAction<'a>, window: i64, title: &'a str) -> zbus::Result<Option<PathBuf>> {
+    let conn = Connection::session().await?;
+
+    let parent_window = format!("x11:{:x}", window);
+
+    let mut options: HashMap<&str, Value> = HashMap::new();
+
+    fn to_portal_filters(filters: &[FileFilter]) -> Vec<(&str, Vec<(u32, &str)>)> {
+        filters
             .iter()
-            .map(|f| (&f.label, f.extensions.iter().map(|ext| (0u32, ext)).collect::<Vec<_>>()))
-            .collect::<Vec<_>>();
+            .map(|f| {
+                let extensions = f.extensions.iter().map(|ext| (0u32, ext.deref())).collect::<Vec<_>>();
 
-        let filters = Value::Array(Array::from(filters));
+                (f.label.deref(), extensions)
+            })
+            .collect::<Vec<_>>()
+    }
 
-        let mut options: HashMap<&str, Value> = HashMap::new();
-        options.insert("filters", filters);
+    match action {
+        FileChooserAction::OpenFile(filters) => {
+            options.insert("filters", Value::Array(Array::from(to_portal_filters(filters))));
+        }
+        FileChooserAction::SaveFile(filters, file_name) => {
+            options.insert("filters", Value::Array(Array::from(to_portal_filters(filters))));
+            options.insert("current_name", Value::Str(file_name.into()));
+        }
+    }
 
-        let ret = FileChooserProxy::builder(&conn)
-            .destination("org.freedesktop.portal.Desktop")?
-            .path("/org/freedesktop/portal/desktop")?
-            .build()
-            .await?
-            .open_file(&format!("x11:{:x}", window), title, options)
-            .await?;
+    let proxy = FileChooserProxy::builder(&conn)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path("/org/freedesktop/portal/desktop")?
+        .build()
+        .await?;
 
-        let request_proxy = RequestProxy::builder(&conn)
-            .destination("org.freedesktop.portal.Desktop")?
-            .path(ret)?
-            .build()
-            .await?;
+    let response = match action {
+        FileChooserAction::OpenFile(_) => proxy.open_file(&parent_window, title, options).await?,
+        FileChooserAction::SaveFile(_, _) => proxy.save_file(&parent_window, title, options).await?,
+    };
 
-        loop {
-            if let Some(response) = request_proxy.receive_response().await?.next().await {
-                let args = response.args()?;
+    let request_proxy = RequestProxy::builder(&conn)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path(response)?
+        .build()
+        .await?;
 
-                if args.response == 0 {
-                    if let Value::Array(uris) = &args.results["uris"] {
-                        if let Some(Value::Str(uri)) = uris.first() {
-                            if let Some(path) = uri.to_string().strip_prefix("file://") {
-                                return Ok(Some(PathBuf::from(path)));
-                            }
+    loop {
+        if let Some(response) = request_proxy.receive_response().await?.next().await {
+            let args = response.args()?;
+
+            if args.response == 0 {
+                if let Value::Array(uris) = &args.results["uris"] {
+                    if let Some(Value::Str(uri)) = uris.first() {
+                        if let Some(path) = uri.to_string().strip_prefix("file://") {
+                            return Ok(Some(PathBuf::from(path)));
                         }
                     }
                 }
-
-                return Ok(None);
             }
+
+            return Ok(None);
         }
+    }
+}
+
+pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    block_on(async {
+        call_file_chooser(FileChooserAction::OpenFile(filters), window, title)
+            .await
+            .map_err(|e| e.into())
+    })
+}
+
+pub fn run_save_file(
+    window: i64,
+    file_name: &str,
+    title: &str,
+    filters: &[FileFilter],
+) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    block_on(async {
+        call_file_chooser(FileChooserAction::SaveFile(filters, file_name), window, title)
+            .await
+            .map_err(|e| e.into())
     })
 }
 
@@ -343,7 +385,7 @@ mod tests {
     use crate::{
         common::shell::FileFilter,
         linux::{
-            shell::{install_icon, install_shortcut, run_pick_file, uninstall_shortcut},
+            shell::{install_icon, install_shortcut, run_pick_file, run_save_file, uninstall_shortcut},
             testdata,
         },
     };
@@ -356,6 +398,23 @@ mod tests {
             &[FileFilter {
                 label: "All Files".to_string(),
                 extensions: vec!["*".to_string()],
+            }],
+        )?;
+
+        println!("{:?}", ret);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_save_file() -> Result<(), Box<dyn Error>> {
+        let ret = run_save_file(
+            0,
+            "config.yaml",
+            "Save File",
+            &[FileFilter {
+                label: "Yaml Files".to_string(),
+                extensions: vec!["yaml".to_string()],
             }],
         )?;
 

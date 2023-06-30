@@ -41,11 +41,46 @@ public final class ShellCompat {
             filters = List.of(new PickerFilter("All Files", List.of("*")));
         }
 
-        final NativePickerFilter[] nativeFilers = filters.stream()
+        final NativePickerFilter[] nativeFilters = filters.stream()
                 .map(f -> new NativePickerFilter(f.name, f.extensions.toArray(new String[0])))
                 .toArray(NativePickerFilter[]::new);
 
-        final String path = nativeRunPickFile(windowHandle, windowTitle, nativeFilers);
+        final String path = nativeRunPickFile(windowHandle, windowTitle, nativeFilters);
+        if (path != null) {
+            return Path.of(path);
+        }
+
+        return null;
+    }
+
+    private static native @Nullable String nativeRunSaveFile(
+            final long windowHandle,
+            @NotNull final String fileName,
+            @NotNull String windowTitle,
+            @NotNull NativePickerFilter[] filters
+    ) throws IOException;
+
+    @Nullable
+    @Blocking
+    public static Path runSaveFile(
+            final long windowHandle,
+            @NotNull final String fileName,
+            @Nullable String windowTitle,
+            @Nullable List<PickerFilter> filters
+    ) throws IOException {
+        if (windowTitle == null) {
+            windowTitle = "Save...";
+        }
+
+        if (filters == null) {
+            filters = List.of(new PickerFilter("All Files", List.of("*")));
+        }
+
+        final NativePickerFilter[] nativeFilters = filters.stream()
+                .map(f -> new NativePickerFilter(f.name, f.extensions.toArray(new String[0])))
+                .toArray(NativePickerFilter[]::new);
+
+        final String path = nativeRunSaveFile(windowHandle, fileName, windowTitle, nativeFilters);
         if (path != null) {
             return Path.of(path);
         }

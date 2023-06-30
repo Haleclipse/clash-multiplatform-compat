@@ -26,7 +26,9 @@ use windows::{
             },
         },
         UI::{
-            Controls::Dialogs::{GetOpenFileNameW, OFN_FILEMUSTEXIST, OPENFILENAMEW},
+            Controls::Dialogs::{
+                GetOpenFileNameW, GetSaveFileNameW, OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT, OPENFILENAMEW, OPEN_FILENAME_FLAGS,
+            },
             Shell::{
                 PropertiesSystem::{IPropertyStore, InitPropVariantFromStringAsVector, PropVariantToString},
                 *,
@@ -47,39 +49,56 @@ use crate::{
     },
 };
 
-pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result<Option<PathBuf>, Box<dyn Error>> {
-    let title = title.to_win32_utf16();
+fn to_win32_filters(filters: &[FileFilter]) -> Vec<u16> {
+    let mut ret = Vec::with_capacity(64);
 
-    let mut joined_filters: Vec<u16> = Vec::with_capacity(64);
     for filter in filters {
-        joined_filters.extend(filter.label.encode_utf16());
-        joined_filters.push(0);
+        ret.extend(filter.label.encode_utf16());
+        ret.push(0);
 
         for extension in &filter.extensions {
             let expr = format!("*.{extension}");
 
-            joined_filters.extend(expr.encode_utf16());
-            joined_filters.extend(";".encode_utf16());
+            ret.extend(expr.encode_utf16());
+            ret.extend(";".encode_utf16());
         }
-        joined_filters.push(0);
+        ret.push(0);
     }
-    joined_filters.push(0);
+    ret.push(0);
 
-    let mut ret: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    ret
+}
 
+fn build_open_file_name(
+    window: i64,
+    title: &[u16],
+    filters: &[u16],
+    flags: OPEN_FILENAME_FLAGS,
+    ret: &mut [u16],
+) -> OPENFILENAMEW {
     let mut open_file_name = OPENFILENAMEW::default();
     open_file_name.lStructSize = size_of::<OPENFILENAMEW>() as u32;
     open_file_name.hwndOwner = HWND(window as isize);
     open_file_name.lpstrTitle = PCWSTR::from_raw(title.as_ptr());
-    open_file_name.lpstrFilter = PCWSTR::from_raw(joined_filters.as_ptr());
+    open_file_name.lpstrFilter = PCWSTR::from_raw(filters.as_ptr());
     open_file_name.lpstrFile = PWSTR::from_raw(ret.as_mut_ptr());
     open_file_name.nMaxFile = (ret.len() - 1) as u32;
-    open_file_name.Flags = OFN_FILEMUSTEXIST;
+    open_file_name.Flags = flags;
 
     let initial_dir = std::env::var("USERPROFILE").map(|s| s.to_win32_utf16());
     if let Ok(dir) = &initial_dir {
         open_file_name.lpstrInitialDir = PCWSTR::from_raw(dir.as_ptr());
     }
+
+    open_file_name
+}
+
+pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    let title = title.to_win32_utf16();
+    let filters = to_win32_filters(filters);
+    let mut ret: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+
+    let mut open_file_name = build_open_file_name(window, &title, &filters, OFN_FILEMUSTEXIST, &mut ret);
 
     unsafe {
         if GetOpenFileNameW(&mut open_file_name as *mut OPENFILENAMEW) == TRUE {
@@ -87,6 +106,37 @@ pub fn run_pick_file(window: i64, title: &str, filters: &[FileFilter]) -> Result
         } else {
             if GetLastError() != ERROR_SUCCESS {
                 Err(Box::new(win32::error::Error::with_current("GetOpenFileNameW")))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+pub fn run_save_file(
+    window: i64,
+    file_name: &str,
+    title: &str,
+    filters: &[FileFilter],
+) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    let title = title.to_win32_utf16();
+    let filters = to_win32_filters(filters);
+
+    let mut ret: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    file_name
+        .encode_utf16()
+        .enumerate()
+        .take(ret.len() - 1)
+        .for_each(|(idx, wc)| ret[idx] = wc);
+
+    let mut open_file_name = build_open_file_name(window, &title, &filters, OFN_OVERWRITEPROMPT, &mut ret);
+
+    unsafe {
+        if GetSaveFileNameW(&mut open_file_name) == TRUE {
+            Ok(Some(PathBuf::from(String::from_win32_utf16(&ret)?)))
+        } else {
+            if GetLastError() != ERROR_SUCCESS {
+                Err(Box::new(win32::error::Error::with_current("GetSaveFileNameW")))
             } else {
                 Ok(None)
             }

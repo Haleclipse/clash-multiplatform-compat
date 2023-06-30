@@ -39,6 +39,36 @@ public class ShellTest {
     }
 
     @Test
+    public void runSaveFile() {
+        Assumptions.assumeTrue(ShellCompat.isSupported());
+
+        Assertions.assertTrue(Window.showIsSuccessWindow("Save File", frame -> {
+            final long nativeHandle;
+            try {
+                nativeHandle = Window.getNativeHandle(frame);
+            } catch (final ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+
+            final Path result;
+            try {
+                result = ShellCompat.runSaveFile(
+                        nativeHandle,
+                        "clash-compat-library.log",
+                        "Save log file",
+                        null
+                );
+            } catch (final IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            System.out.println(result);
+
+            Assertions.assertNotEquals(0, nativeHandle);
+        }));
+    }
+
+    @Test
     public void runLaunchFile() {
         Assumptions.assumeTrue(ShellCompat.isSupported());
 

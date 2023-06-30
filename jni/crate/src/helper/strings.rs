@@ -1,14 +1,9 @@
 use jni_sys::{jsize, jstring, JNIEnv};
 use std::ptr::null_mut;
 
-use crate::{
-    helper::{call::jcall, throwable::SuppressedException},
-    utils::scoped::Scoped,
-};
+use crate::{helper::call::jcall, utils::scoped::Scoped};
 
 pub fn java_string_to_string(env: *mut JNIEnv, string: jstring) -> String {
-    let _throwable = SuppressedException::suppress(env);
-
     let length = jcall!(env, GetStringLength, string);
     let ptr = Scoped::new(jcall!(env, GetStringChars, string, null_mut()), |c| {
         jcall!(env, ReleaseStringChars, string, *c)
@@ -19,8 +14,6 @@ pub fn java_string_to_string(env: *mut JNIEnv, string: jstring) -> String {
 }
 
 pub fn string_to_java_string(env: *mut JNIEnv, string: &str) -> jstring {
-    let _throwable = SuppressedException::suppress(env);
-
     let utf16_chars = string.encode_utf16().collect::<Vec<_>>();
 
     jcall!(env, NewString, utf16_chars.as_ptr(), utf16_chars.len() as jsize)
