@@ -53,7 +53,7 @@ struct Context {
     width: u32,
     height: u32,
 
-    control_positions: [Rectangle; 2],
+    control_positions: [Rectangle; 3],
     frame_sizes: [u32; 2],
 }
 
@@ -76,7 +76,7 @@ impl Context {
             root,
             width,
             height,
-            control_positions: [Rectangle::default(); 2],
+            control_positions: [Rectangle::default(); 3],
             frame_sizes: [0; 2],
         }
     }
