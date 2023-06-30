@@ -16,7 +16,7 @@ use windows::Win32::{
             SendMessageW, SetWindowLongPtrW, SetWindowLongW, SetWindowPos, TrackPopupMenu, GWLP_WNDPROC, GWL_STYLE, HTBOTTOM,
             HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT,
             NCCALCSIZE_PARAMS, SM_CXPADDEDBORDER, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_COMMAND, WM_DESTROY,
-            WM_MOVE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_SIZE, WM_SYSCOMMAND, WS_THICKFRAME,
+            WM_MOVE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_SIZE, WM_SYSCOMMAND, WS_OVERLAPPEDWINDOW,
         },
     },
 };
@@ -35,7 +35,7 @@ struct Context {
     position: RECT,
 
     frame_sizes: [u32; 2],
-    control_positions: [RECT; 2],
+    control_positions: [RECT; 3],
 }
 
 impl Context {
@@ -227,7 +227,7 @@ pub fn set_borderless(window: i64) -> Result<Box<dyn WindowHints>, Box<dyn std::
     unsafe {
         let window = HWND(window as isize);
 
-        SetWindowLongW(window, GWL_STYLE, WS_THICKFRAME.0 as i32);
+        SetWindowLongW(window, GWL_STYLE, WS_OVERLAPPEDWINDOW.0 as i32);
 
         let margin = MARGINS {
             cxLeftWidth: 0,
@@ -242,7 +242,7 @@ pub fn set_borderless(window: i64) -> Result<Box<dyn WindowHints>, Box<dyn std::
             root: window,
             position: Default::default(),
             frame_sizes: [0; 2],
-            control_positions: [RECT::default(); 2],
+            control_positions: [RECT::default(); 3],
         };
 
         GetWindowRect(context.root, &mut context.position);

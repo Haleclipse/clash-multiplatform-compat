@@ -28,6 +28,7 @@ public class WindowTest {
             ctx.setFrameSize(WindowCompat.WindowFrame.TITLE_BAR, 40);
             ctx.setControlPosition(WindowCompat.WindowControl.CLOSE_BUTTON, 0, 0, 40, 40);
             ctx.setControlPosition(WindowCompat.WindowControl.BACK_BUTTON, 80, 0, 40, 40);
+            ctx.setControlPosition(WindowCompat.WindowControl.MINIMIZE_BUTTON, 160, 0, 40, 40);
         }));
     }
 }

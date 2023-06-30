@@ -38,7 +38,8 @@ public final class WindowCompat {
 
     public enum WindowControl {
         CLOSE_BUTTON,
-        BACK_BUTTON
+        BACK_BUTTON,
+        MINIMIZE_BUTTON,
     }
 
     public static class Context {
